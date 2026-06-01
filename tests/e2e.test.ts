@@ -289,6 +289,9 @@ function makeWorld(seedTeamFiles: Record<string, string> = {}): World {
     CLAUDE_PLUGIN_ROOT: pluginRoot,
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1',
+    // Deterministic: skip load.mjs's detached background `git pull` so it can't
+    // race assertions or cleanup's rmSync of the temp world.
+    CLAUDE_TEAM_MEM_NO_BG_PULL: '1',
   }
   delete env.CLAUDE_CONFIG_DIR
   delete env.CLAUDE_TEAM_MEMORY_REPO

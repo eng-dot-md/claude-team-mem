@@ -27,8 +27,12 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # --ignore-scripts: skip dependency postinstall scripts. The only one is
+      # esbuild's, which is unnecessary (its platform binary ships in the
+      # @esbuild/<platform> optional dep), and pnpm 11+ otherwise fails the install
+      # with ERR_PNPM_IGNORED_BUILDS for the un-approved build.
       - name: Install (frozen lockfile)
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
         run: pnpm typecheck

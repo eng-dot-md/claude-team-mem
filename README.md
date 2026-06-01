@@ -193,11 +193,16 @@ using **pnpm**. Authored code lives in `src/`; the build emits the committed
 `plugin/scripts/*.mjs` the installed plugin runs.
 
 ```bash
-pnpm install      # dev toolchain only (esbuild, tsx, typescript) — no runtime deps
+pnpm install --ignore-scripts   # dev toolchain only (esbuild, tsx, typescript); no runtime deps
 pnpm build        # esbuild: src/bin/{load,publish,unshare,resolve}.ts → plugin/scripts/*.mjs
 pnpm typecheck    # tsc --noEmit (strict, noUncheckedIndexedAccess, verbatimModuleSyntax)
 pnpm test         # builds first, then node:test (units + offline end-to-end)
 ```
+
+> Use `--ignore-scripts` on install: the only dependency postinstall is esbuild's,
+> which is unnecessary (its platform binary ships in the `@esbuild/<platform>`
+> optional dependency), and pnpm 11+ otherwise fails the install with
+> `ERR_PNPM_IGNORED_BUILDS`. Explicit `pnpm run` scripts (build/test) are unaffected.
 
 Notes:
 

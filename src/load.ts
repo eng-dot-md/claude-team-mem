@@ -359,9 +359,6 @@ export function buildSessionContext(projectRoot: string): { context: string | nu
       return { context: null }
     }
 
-    // 2. Background refresh — detached, never awaited, must not block startup.
-    backgroundPull(checkoutDir)
-
     // 4 (gather). Collect the team files first; needed for both reconcile + index.
     const entries = collectTeamEntries(targetMemoryDir)
 
@@ -373,6 +370,11 @@ export function buildSessionContext(projectRoot: string): { context: string | nu
     } else {
       ctmLog('load: native dir unusable; injecting index only (no symlinking)')
     }
+
+    // Background refresh AFTER this session has finished reading the checkout, so a
+    // concurrent `git pull` can never race collectTeamEntries / reconcile above.
+    // Detached + never awaited; the NEXT session sees the update (DESIGN §6.2).
+    backgroundPull(checkoutDir)
 
     // Nothing to share and nothing to flag -> inject nothing.
     if (entries.length === 0 && rc.realClashes.length === 0 && rc.unrelatedSymlinkClashes.length === 0) {
@@ -412,6 +414,8 @@ export function buildSessionContext(projectRoot: string): { context: string | nu
  */
 function backgroundPull(checkoutDir: string): void {
   try {
+    // Opt-out for tests / offline / users who prefer manual `/team-memory sync`.
+    if (process.env.CLAUDE_TEAM_MEM_NO_BG_PULL) return
     // Only attempt if the checkout is a real dir (resolve() clones it; guard anyway).
     if (!existsSync(checkoutDir)) return
     const child = spawn('git', ['pull', '--ff-only'], {

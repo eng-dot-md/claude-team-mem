@@ -37,8 +37,11 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # --ignore-scripts: esbuild's postinstall is unnecessary (binary ships in its
+      # @esbuild/<platform> optional dep) and pnpm 11+ would otherwise fail with
+      # ERR_PNPM_IGNORED_BUILDS for the un-approved build.
       - name: Install (frozen lockfile)
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       # Gate — never cut a release that doesn't typecheck, build, and test.
       - name: Typecheck
