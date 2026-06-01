@@ -211,6 +211,20 @@ Notes:
   repo: `/plugin marketplace add /path/to/claude-team-mem` (the manifest's
   `"source": "./plugin"` resolves the installable subtree).
 
+## CI & Releases
+
+- **CI** (`.github/workflows/ci.yml`) runs on every PR and push to `main`: install
+  → typecheck → build → verify the committed `plugin/scripts/*.mjs` match a fresh
+  build → test.
+- **Releases** (`.github/workflows/release.yml`) are cut manually: Actions →
+  **Release** → *Run workflow*, then choose a `patch` / `minor` / `major` bump (or
+  pass an explicit `version`). It re-runs the full gate, bumps the version across
+  `package.json`, `plugin/.claude-plugin/plugin.json`, and
+  `.claude-plugin/marketplace.json`, commits + tags `vX.Y.Z`, and publishes a
+  GitHub Release with auto-generated notes. The plugin ships via the Claude Code
+  marketplace (git `source: ./plugin`), so the tag / GitHub Release is the
+  artifact — there is no npm package.
+
 ## License
 
 MIT.
