@@ -63,9 +63,10 @@ For whatever project you are in, resolve its storage repo in this order:
   several orgs mapped to the *same* storage repo share one checkout. The
   `<org>/<repo>` project key is a subtree inside that checkout.
 
-**Config** — canonical path `~/.claude/claude-team-memory.json` (user-level,
-manageable via the `/team-memory` skill), with `${CLAUDE_PLUGIN_DATA}/config.json`
-as a fallback if the canonical file is absent:
+**Config** lives at `${CLAUDE_PLUGIN_DATA}/config.json` (managed via the
+`/team-memory` skill). `CLAUDE_PLUGIN_DATA` is provided by Claude Code; when unset
+(e.g. running the scripts outside the plugin) it defaults to `~/.claude-team-mem`,
+so the default config path is `~/.claude-team-mem/config.json`:
 
 ```json
 {
@@ -227,9 +228,9 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 ```
 
 - Scripts use `${CLAUDE_PLUGIN_ROOT}` to self-locate and `${CLAUDE_PLUGIN_DATA}`
-  for the repo **checkouts** (`${CLAUDE_PLUGIN_DATA}/repos/<storage-id>/`).
-- The **config** is read from `~/.claude/claude-team-memory.json` (canonical),
-  falling back to `${CLAUDE_PLUGIN_DATA}/config.json` if the former is absent.
+  (**default `~/.claude-team-mem`** when not set by Claude Code) as the single data
+  dir for both checkouts (`${CLAUDE_PLUGIN_DATA}/repos/<storage-id>/`) and config.
+- The **config** is `${CLAUDE_PLUGIN_DATA}/config.json` (one canonical location).
 - macOS bash 3.2 compatible; jq or python3 for JSON; fail-soft.
 
 ## 11. Caveats (validate / handle during implementation)
@@ -251,8 +252,8 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 1. Plugin scaffold (`plugin.json` / `marketplace.json` / `README.md`).
 2. `lib.sh` + `resolve-repo.sh`: env → config → disabled resolution,
    host/owner/protocol parsing, circular guard, checkout keyed by storage-repo
-   identity under `${CLAUDE_PLUGIN_DATA}/repos/`, config read from
-   `~/.claude/claude-team-memory.json` (fallback `${CLAUDE_PLUGIN_DATA}/config.json`).
+   identity under `${CLAUDE_PLUGIN_DATA}/repos/`, config at
+   `${CLAUDE_PLUGIN_DATA}/config.json` (`CLAUDE_PLUGIN_DATA` defaults to `~/.claude-team-mem`).
 3. `load.sh` + `hooks/hooks.json`: SessionStart symlink reconcile + index injection.
 4. `skills/share-memory` + `publish.sh`: classify / sanitize / upsert / merge /
    conflict resolution / dedupe / convert-to-symlink (only when identical) after push.
@@ -275,6 +276,6 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 
 1. Create a private storage repo for the team, e.g. `<your-org>/claude-team-memory`
    (one repo can serve several orgs — see §3).
-2. Configure `~/.claude/claude-team-memory.json`, e.g.
-   `"owners": { "<your-org>": "auto" }`.
+2. Configure `${CLAUDE_PLUGIN_DATA}/config.json` (default `~/.claude-team-mem/config.json`),
+   e.g. `"owners": { "<your-org>": "auto" }`.
 3. Install + enable the plugin; ensure `git` + `jq` (or python3) are on PATH.
