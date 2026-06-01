@@ -1,0 +1,17 @@
+{
+  "name": "claude-team-mem",
+  "owner": {
+    "name": "eng-dot-md",
+    "url": "https://github.com/eng-dot-md"
+  },
+  "metadata": {
+    "description": "Single-plugin marketplace for claude-team-mem: a git-backed team memory sync layer on top of Claude's native memory."
+  },
+  "plugins": [
+    {
+      "name": "claude-team-mem",
+      "source": "./plugin",
+      "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo."
+    }
+  ]
+}

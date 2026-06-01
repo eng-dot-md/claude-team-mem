@@ -1,0 +1,22 @@
+{
+  "name": "claude-team-mem",
+  "version": "0.1.0",
+  "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo.",
+  "author": {
+    "name": "eng-dot-md",
+    "url": "https://github.com/eng-dot-md"
+  },
+  "repository": "https://github.com/eng-dot-md/claude-team-mem",
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "plugin",
+    "memory",
+    "team",
+    "git",
+    "typescript",
+    "nodejs"
+  ],
+  "homepage": "https://github.com/eng-dot-md/claude-team-mem#readme"
+}

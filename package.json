@@ -1,0 +1,24 @@
+{
+  "name": "claude-team-mem",
+  "version": "0.1.0",
+  "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm build && node --import tsx --test tests/*.test.ts",
+    "clean": "rm -rf plugin/scripts dist node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "esbuild": "^0.24.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
