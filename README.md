@@ -34,15 +34,23 @@ prevented structurally. See [`DESIGN.md`](./DESIGN.md) for the full design.
 
 ## Requirements
 
-- **macOS / darwin.** Scripts target `/bin/bash` 3.2 (the version shipped with
-  macOS); symlink-based loading assumes a POSIX filesystem.
-- **`git`** on `PATH` (transport + store).
-- **`jq`** on `PATH` (config and JSON handling). `python3` is also used where
-  available.
+- **macOS / darwin.** Symlink-based loading assumes a POSIX filesystem (the team
+  is on darwin).
+- **Node ≥ 20** on `PATH`. The plugin is TypeScript built to zero-runtime-dependency
+  ESM; the SessionStart hook and the skills run the bundled scripts under `node`.
+- **`git`** on `PATH` (transport + store). Every git call goes through an args
+  array (`execFileSync('git', […])`), never a shell string.
+
+> The installed plugin needs **no build step and no `node_modules`** — the
+> `plugin/scripts/*.mjs` it runs are committed build outputs. Node and the dev
+> toolchain (pnpm, esbuild, tsx) are only needed to *develop* the plugin (see
+> [Development](#development)).
 
 ## Install
 
-Add this repository as a Claude Code marketplace, then install the plugin:
+Add this repository as a Claude Code marketplace, then install the plugin. The
+marketplace manifest points at the `plugin/` subdirectory (`"source": "./plugin"`),
+so installing pulls only the installable plugin:
 
 ```
 /plugin marketplace add eng-dot-md/claude-team-mem
@@ -90,7 +98,22 @@ Follow [`DESIGN.md` §13](./DESIGN.md):
    list are no-ops** — repos you merely cloned (open source, forks, …) are never
    touched.
 
-3. **Ensure the toolchain.** `git` and `jq` (or `python3`) on `PATH`.
+   You can also edit the config file directly instead of using the skill. It is a
+   small JSON document at `$CLAUDE_PLUGIN_DATA/config.json`:
+
+   ```json
+   {
+     "owners": { "<your-org>": "auto" },
+     "maxIndexBytes": 20000
+   }
+   ```
+
+   `maxIndexBytes` (optional, default `20000`; `0` = uncapped) bounds the index
+   injected at session start.
+
+3. **Ensure the toolchain.** `git` and **`node` (≥ 20)** on `PATH`. (The
+   `/team-memory` skill uses `jq` for config edits when present and falls back to
+   editing the JSON directly when it is not.)
 
 > Per-project override: set `CLAUDE_TEAM_MEMORY_REPO` (a full git URL or
 > `owner/repo`) in your environment to override config for the repo you are in.
@@ -141,15 +164,52 @@ Once an owner is configured, day-to-day use is three things:
 
 ```
 claude-team-mem/
-├─ .claude-plugin/{plugin.json, marketplace.json}   manifest + marketplace
-├─ hooks/hooks.json                                  SessionStart → load
-├─ skills/
-│   ├─ share-memory/SKILL.md                         classify → sanitize → publish
-│   └─ team-memory/SKILL.md                          config / status / sync / unshare
-├─ scripts/{lib.sh, resolve-repo.sh, load.sh, publish.sh, unshare.sh}
+├─ .claude-plugin/marketplace.json          single-plugin marketplace ("source": "./plugin")
+├─ plugin/                                   the installable plugin (what ships)
+│   ├─ .claude-plugin/plugin.json            manifest
+│   ├─ hooks/hooks.json                       SessionStart → node scripts/load.mjs
+│   ├─ skills/
+│   │   ├─ share-memory/SKILL.md              classify → sanitize → merge → publish
+│   │   └─ team-memory/SKILL.md               config / status / sync / unshare
+│   └─ scripts/{load,publish,unshare,resolve}.mjs  BUILT from src/bin/ (committed; do not hand-edit)
+├─ src/                                       the TypeScript we author
+│   ├─ bin/{load,publish,unshare,resolve}.ts  CLI entry points (bundled into plugin/scripts/)
+│   ├─ {load,publish,unshare,resolve,types}.ts core flows + shared types
+│   └─ lib/{git,remote,paths,config,frontmatter,guard,log}.ts
+├─ scripts/build.mjs                          esbuild bundler (src/bin → plugin/scripts)
+├─ tests/{lib,e2e}.test.ts                    node:test (units + offline end-to-end)
+├─ package.json · tsconfig.json
 ├─ DESIGN.md
 └─ README.md
 ```
+
+See [`DESIGN.md` §10](./DESIGN.md) for the full structure and the rationale for
+the `src/` (authored) vs `plugin/` (shipped) split.
+
+## Development
+
+The plugin is **TypeScript** built to zero-runtime-dependency ESM with esbuild,
+using **pnpm**. Authored code lives in `src/`; the build emits the committed
+`plugin/scripts/*.mjs` the installed plugin runs.
+
+```bash
+pnpm install      # dev toolchain only (esbuild, tsx, typescript) — no runtime deps
+pnpm build        # esbuild: src/bin/{load,publish,unshare,resolve}.ts → plugin/scripts/*.mjs
+pnpm typecheck    # tsc --noEmit (strict, noUncheckedIndexedAccess, verbatimModuleSyntax)
+pnpm test         # builds first, then node:test (units + offline end-to-end)
+```
+
+Notes:
+
+- **Never hand-edit `plugin/scripts/*.mjs`** — they are build outputs. Edit the
+  TypeScript in `src/` and re-run `pnpm build`. The `.mjs` are committed so the
+  installed plugin runs with no build step or `node_modules`.
+- The test suite is fully **offline**: `tests/e2e.test.ts` drives the built
+  `plugin/scripts/*.mjs` against a bare local git "remote" in an isolated
+  `HOME`/`CLAUDE_PLUGIN_DATA` (no network, no real org touched).
+- To try it against a local checkout of Claude Code, point the marketplace at the
+  repo: `/plugin marketplace add /path/to/claude-team-mem` (the manifest's
+  `"source": "./plugin"` resolves the installable subtree).
 
 ## License
 

@@ -1,23 +1,34 @@
 ---
 name: share-memory
 description: Publish a team-relevant subset of this project's Claude memory to the team's shared git storage repo. Use when the user asks to "share memory", "publish memory", "push my notes/memory to the team", "share what I learned with the team", "sync my memory up", "share this with my teammates", or after a session that produced reusable project knowledge worth sharing. Classifies personal vs team, sanitizes secrets, semantically merges with teammates' copies, shows a review summary, waits for confirmation, then publishes. Never deletes shared memory (that is /team-memory unshare).
+user-invocable: true
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Bash(git *)
+  - Bash(ls *)
+  - Bash(cat *)
+  - Bash(mkdir *)
+  - Bash(node "$CLAUDE_PLUGIN_ROOT"/scripts/*)
 ---
 
 # share-memory — publish team memory
 
 You are the **reasoning** half of the team-memory publish path. The git
-**mechanics** (pull/fetch, commit, push, retry on races, never-force,
-symlink-back) live in `scripts/publish.sh`; you must NOT re-implement them. Your
-job is to decide *what* to publish and *what the published bytes should be*
-(classify → sanitize → merge), present it for confirmation, then hand the final
-bytes to `publish.sh`.
+**mechanics** (stage exact paths, commit, `pull --rebase` → push with bounded
+retry, never force-push, convert a published local file to a symlink only when
+byte-identical) live in `scripts/publish.mjs` (a bundled Node script); you must
+NOT re-implement them. Your job is to decide *what* to publish and *what the
+published bytes should be* (classify → sanitize → merge), present it for
+confirmation, then hand the final bytes to `publish.mjs`.
 
 This skill is **manual** (v1). Treat it as a careful, auditable operation:
 nothing is shared without an explicit user "yes".
 
 ## Cardinal rules (read first)
 
-1. **Publish NEVER deletes.** `publish.sh` only adds/updates files in the
+1. **Publish NEVER deletes.** `publish.mjs` only adds/updates files in the
    checkout; it never runs `git rm`, never force-pushes, never removes a
    teammate's file. A file missing locally is **not** a reason to delete it
    upstream (it may belong to a teammate, or local reconcile may have degraded).
@@ -41,39 +52,50 @@ nothing is shared without an explicit user "yes".
 
 ## Inputs / environment
 
-- `${CLAUDE_PLUGIN_ROOT}` — the plugin dir; scripts are at
-  `${CLAUDE_PLUGIN_ROOT}/scripts/`.
+- `${CLAUDE_PLUGIN_ROOT}` — the plugin dir; the bundled script is at
+  `${CLAUDE_PLUGIN_ROOT}/scripts/publish.mjs` and runs under `node`.
 - The memory file format is YAML frontmatter (`name`, `description`,
-  `metadata: { type, node_type, originSessionId, ... }`) + a Markdown body.
-  The plugin adds `metadata.scope` (`team` | `personal`) and, for shared files,
+  `metadata: { type, scope, origin, ... }`) + a Markdown body. The plugin uses
+  `metadata.scope` (`team` | `personal`) and, for shared files,
   `metadata.origin: team`.
 
 ## Procedure
 
 ### 1. Resolve the storage repo and paths
 
-Run the resolver from the repo you are in:
+Resolution (env / config → checkout / target / native paths, the anti-circular
+guard, and the one-time FULL clone) is owned by the plugin's resolver. Run it
+directly from THIS project's directory and parse its JSON — do **not** re-derive
+paths by hand, and do **not** scrape another skill's prose:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/resolve-repo.sh"
+RESOLVE=$(node "$CLAUDE_PLUGIN_ROOT/scripts/resolve.mjs" 2>/dev/null)
+ENABLED=$(printf '%s' "$RESOLVE"      | jq -r '.enabled')
+REASON=$(printf '%s' "$RESOLVE"       | jq -r '.reason // ""')
+STORAGE_URL=$(printf '%s' "$RESOLVE"  | jq -r '.storageUrl // ""')
+PROJECT_KEY=$(printf '%s' "$RESOLVE"  | jq -r '.projectKey // ""')
+CHECKOUT_DIR=$(printf '%s' "$RESOLVE" | jq -r '.checkoutDir // ""')
+TARGET_DIR=$(printf '%s' "$RESOLVE"   | jq -r '.targetMemoryDir // ""')
+NATIVE_DIR=$(printf '%s' "$RESOLVE"   | jq -r '.nativeMemoryDir // ""')
 ```
 
-It prints **one JSON object**. If `.enabled` is `false`, STOP and tell the user
-team memory is not active here, quoting `.reason` (e.g. owner not configured,
-not a git repo, no origin, or a circular/self-reference guard). Suggest
-`/team-memory enable <owner>` if the reason is "not configured". Do not proceed.
+(No `jq`? Parse the single JSON object with `node -pe`.) When `ENABLED` is `true`:
 
-If `.enabled` is `true`, capture these fields (all are absolute paths / strings):
+- `STORAGE_URL` — resolved git URL of the storage repo.
+- `CHECKOUT_DIR` — local clone of the storage repo (the resolver already cloned it
+  if absent; it does **not** pull — fine, `publish.mjs` rebases onto upstream
+  before pushing).
+- `PROJECT_KEY` — `<org>/<repo>` subtree key for THIS project.
+- `TARGET_DIR` — `<checkoutDir>/<projectKey>/memory` (where shared bytes go).
+- `NATIVE_DIR` — this project's native Claude memory dir (real files + symlinks).
+  May not exist on disk if native memory was never used here.
 
-- `storageUrl` — the resolved git URL of the storage repo.
-- `checkoutDir` — local clone of the storage repo.
-- `projectKey` — `<org>/<repo>` subtree key for THIS project.
-- `targetMemoryDir` — `<checkoutDir>/<projectKey>/memory` (where shared bytes go).
-- `nativeMemoryDir` — this project's native Claude memory dir (real files +
-  symlinks). May not exist on disk if native memory was never used here.
+If `ENABLED` is not `true`, STOP and tell the user, quoting `$REASON` (owner not
+configured, not a git repo, no origin, circular/self-reference, or the clone
+failed). If the reason is "not configured", suggest `/team-memory enable <owner>`.
 
-The resolver has already cloned the checkout if it was absent (it does **not**
-pull; that is fine — `publish.sh` fetches/rebases before pushing).
+These are the SAME paths the SessionStart load and `unshare.mjs` use — they all
+come from this one resolver, so what you publish links back correctly.
 
 ### 2. Enumerate candidate files (native REAL files only)
 
@@ -85,8 +107,8 @@ List `nativeMemoryDir`. For each `*.md` entry:
 - Consider only **real files**. These are the personal / unpublished / kept-back
   memories — the only things that can become *new* shared facts.
 
-You can identify symlinks with `ls -la` or `test -L`. Also ignore any
-`MEMORY.md` index file (the index is derived at load time and is never
+Identify symlinks with `ls -la` (a leading `l` / `->` arrow) or `test -L`. Also
+ignore any `MEMORY.md` index file (the index is derived at load time and is never
 published — DESIGN §7.5).
 
 If `nativeMemoryDir` does not exist or has no real `*.md` files, tell the user
@@ -132,31 +154,46 @@ nothing useful, move it to the PERSONAL list instead.
 Compute the same-slug path in the checkout: `targetMemoryDir/<slug>.md` (the
 slug is the native filename, unchanged — **upsert**, never `-2`).
 
-- **No existing copy** → this is a new shared fact: stage the sanitized content
-  as the new file.
-- **Existing copy, byte-identical to your sanitized content** → **skip** (dedupe,
-  no churn — DESIGN §8.1). It is already shared and unchanged.
+- **No existing copy** → this is a new shared fact: this run will stage the
+  sanitized content as the new file.
+- **Existing copy, byte-identical to your sanitized content** → it is already
+  shared and unchanged. You may still pass it to `publish.mjs`; it will be
+  detected as byte-identical and **skipped** (dedupe, no churn — DESIGN §8.1).
 - **Existing copy, diverged** → **semantically merge** into one coherent fact
   (DESIGN §7.3, §9):
   - Union the facts; **do not drop the teammate's additions**.
   - Where they conflict, the **newer / more specific** statement supersedes the
     stale one; keep compatible nuances from both.
   - Re-derive a single clean frontmatter (`name`, `description`); set
-    `metadata.scope: team` and `metadata.origin: team`. Optionally add an
-    `updated: YYYY-MM-DD` trail in the body.
+    `metadata.scope: team`. Optionally add an `updated: YYYY-MM-DD` trail in the
+    body. Do **not** add `metadata.origin: team` here (see the provenance note).
   - The merged text is the new shared copy.
 
 Read both sides fully before merging. Never blind-overwrite.
 
+> **Provenance backstop.** `metadata.origin: team` marks a fact as *received from
+> the team* (it arrived via the checkout, typically loaded as a symlink — DESIGN
+> §8.3). `publish.mjs` **refuses to publish any staged file whose frontmatter has
+> `metadata.origin: team`** and reports it, so a fact you merely received can
+> never loop back out as "new local work". Therefore: when you author or merge a
+> shared fact, set `metadata.scope: team` but **leave `metadata.origin` unset** —
+> otherwise `publish.mjs` will skip the very file you mean to share.
+
 ### 6. Write the final bytes into the checkout (staging the content)
 
-For each team file that is **new or merged** (i.e. not skipped as identical),
-write your final sanitized/merged content to `targetMemoryDir/<slug>.md`,
-creating `targetMemoryDir` if needed. Do **not** commit or push yourself —
-`publish.sh` does that. Do **not** delete anything from the checkout.
+For each team file that is **new or merged** (and also any you want re-checked
+for an identical skip), write your final sanitized/merged content to
+`targetMemoryDir/<slug>.md`, creating `targetMemoryDir` if needed. Do **not**
+commit or push yourself — `publish.mjs` does that. Do **not** delete anything
+from the checkout.
 
 Keep a list of the **slugs you wrote** (basenames, e.g. `foo.md`) — that exact
-set is what you pass to `publish.sh`.
+set is what you pass to `publish.mjs`.
+
+> A tombstone at `targetMemoryDir/.tombstones/<slug>` means that slug was
+> deliberately retracted via `/team-memory unshare`. `publish.mjs` will **refuse**
+> to re-publish a tombstoned slug and report it. Do not try to resurrect a
+> retracted fact without team agreement.
 
 ### 7. Show the REVIEW SUMMARY and WAIT for explicit confirmation (DESIGN §7.6)
 
@@ -169,7 +206,7 @@ WILL SHARE (new):
   - api-conventions.md   "Internal API error envelope + retry policy"
 WILL SHARE (merged with teammate's copy):
   - build-notes.md       merged: kept their bazel tip, added the pnpm filter note
-UNCHANGED (already shared, skipped):
+UNCHANGED (already shared, will be skipped):
   - chain-ids.md
 KEPT PERSONAL (not shared):
   - my-editor-setup.md   (type: user / personal preference)
@@ -187,13 +224,13 @@ Nothing is deleted. Proceed to publish these N file(s)? (yes / no / edit)
   committed/pushed; that is harmless and will be overwritten or ignored next
   time — do not attempt to delete it).
 
-### 8. Publish (call publish.sh — the mechanics)
+### 8. Publish (call publish.mjs — the mechanics)
 
-On confirmation, invoke `publish.sh` with the resolved paths and the exact slug
-set you wrote. One `--slug` per file:
+On confirmation, invoke the bundled script with the resolved paths and the exact
+slug set you wrote. One `--slug` per file:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/publish.sh" \
+node "$CLAUDE_PLUGIN_ROOT/scripts/publish.mjs" \
   --checkout-dir "<checkoutDir>" \
   --target-dir   "<targetMemoryDir>" \
   --native-dir   "<nativeMemoryDir>" \
@@ -201,43 +238,58 @@ set you wrote. One `--slug` per file:
   --slug foo.md --slug bar.md
 ```
 
-`publish.sh` will: fetch → stage only those slugs → commit → rebase onto
-upstream → push (bounded retry on races, **never force**) → and, on success,
-convert each native real file to a symlink into the checkout **only if its bytes
-are byte-identical** to the pushed copy. It prints **one JSON object** and
-always exits 0. Read these fields:
+Pass each path as its own argument exactly as resolved (no shell globbing — the
+script stages each slug as an exact path). `publish.mjs` will: validate each
+slug (skipping invalid ones), skip tombstoned and team-origin slugs, stage only
+the named slugs (skipping byte-identical ones), `ensureIdentity` + commit, then
+`pull --rebase` → push with bounded retry (**never force**), and on success
+convert each native real file to an **absolute symlink** into the checkout
+**only if its bytes are byte-identical** to the pushed copy. It prints **one
+JSON object** to stdout and exits 0 on a normal run (a malformed invocation
+errors to stderr with a non-zero exit). Read these fields:
 
-- `.published` — `true` if a push succeeded **or** it was a clean no-op.
-- `.pushed` / `.committed` — what actually happened.
-- `.reason` — human explanation (quote it to the user).
-- `.slugs[]` — per file: `inCheckout`, `linked` (converted to symlink),
-  `keptLocal` (kept the native real file as-is), and a `note`.
+- `published` — `true` if a push succeeded **or** it was a clean no-op.
+- `pushed` / `committed` — what actually happened.
+- `reason` — human explanation (quote it to the user).
+- `commit` — the resulting commit sha (empty if none).
+- `slugs[]` — per file: `accepted` (false = skipped: invalid / tombstoned /
+  team-origin, with the reason in `note`), `inCheckout`, `linked` (converted to /
+  left as a symlink into the checkout), `keptLocal` (kept the native real file
+  as-is), and a `note`.
 
-### 9. Handle the publish.sh result (DESIGN §7.7, §7.8, §9)
+### 9. Handle the publish.mjs result (DESIGN §7.7, §7.8, §9)
 
-- **`.published == true`, all slugs `linked`:** clean success. The shared bytes
-  matched your local files exactly, so each local file is now a symlink into the
-  checkout. Tell the user what was published and that local recall is preserved.
+- **`published == true`, all accepted slugs `linked`:** clean success. The shared
+  bytes matched your local files exactly, so each local file is now an absolute
+  symlink into the checkout. Tell the user what was published and that local
+  recall is preserved.
 
 - **Some slugs `keptLocal == true` (and `linked == false`):** the *shared* copy
   differs from your *local* file because you **sanitized or merged** it. This is
-  by design — `publish.sh` kept your full local real file so nothing sensitive
+  by design — `publish.mjs` kept your full local real file so nothing sensitive
   was discarded *and* nothing sensitive was shared. → **Go to step 10** (offer to
   split the remainder).
 
-- **`.pushed == false` because of a conflict** (the `reason` mentions a rebase
+- **`pushed == false` because of a conflict** (the `reason` mentions a rebase
   conflict / "Claude must merge both sides"): a teammate pushed a conflicting
-  change. `publish.sh` aborted the rebase cleanly and kept your local files; the
-  remote was **not** clobbered. To resolve (DESIGN §9): in the checkout, run
-  `git -C "<checkoutDir>" fetch && git -C "<checkoutDir>" log --oneline -3 "@{u}"`,
-  read the upstream version of each conflicting `<slug>.md`, **semantically merge
-  both sides** into the file under `targetMemoryDir`, then **re-run step 8** with
-  the same slugs. Repeat until it pushes. **Never** tell the user to force-push.
+  change. `publish.mjs` aborted the rebase cleanly and kept your local files; the
+  remote was **not** clobbered, and your commit is local-only in the checkout. To
+  resolve (DESIGN §9): in the checkout, run `git -C "<checkoutDir>" fetch` then
+  `git -C "<checkoutDir>" log --oneline -3 "@{u}"`, read the upstream version of
+  each conflicting `<slug>.md`, **semantically merge both sides** into the file
+  under `targetMemoryDir`, then **re-run step 8** with the same slugs. Repeat
+  until it pushes. **Never** tell the user to force-push.
 
-- **`.published == false` for another reason** (e.g. offline, push rejected after
+- **`published == false` for another reason** (e.g. offline, push rejected after
   retries, commit failed): report `reason`. The local real files are kept and a
   local-only commit may exist in the checkout for a later retry. Suggest checking
-  connectivity / auth and re-running `/share-memory`. Do not force anything.
+  connectivity / auth and re-running `/share-memory` (or `/team-memory sync` to
+  push the pending commit). Do not force anything.
+
+- **Some slugs `accepted == false`:** quote their `note` — e.g. an invalid slug
+  was skipped, a slug was refused because a tombstone exists (retracted via
+  `/team-memory unshare`), or a file was skipped as already team-origin. These
+  are intentional safety skips, not failures.
 
 ### 10. Offer to preserve the redacted / local-only remainder (DESIGN §7.8)
 
@@ -263,7 +315,9 @@ the checkout.
 - **Editing a symlinked memory edits the checkout copy** (uncommitted). That is
   expected; the next `/share-memory` (or a teammate's) will publish it. (DESIGN §11.3)
 - **If `nativeMemoryDir` doesn't exist**, there are no local real files to share —
-  stop with a friendly message. (Publishing is sourced from local memory.)
+  stop with a friendly message. (Publishing is sourced from local memory.) If it
+  exists but the resolver could not derive it (degraded), `publish.mjs` still
+  updates the checkout; it just won't create symlinks — note that to the user.
 - **Multiple projects / orgs** can map to one storage repo; the `projectKey`
   subtree keeps them separate. You only ever touch this project's subtree.
 - This skill **adds and updates** only. For removal, defer to `/team-memory

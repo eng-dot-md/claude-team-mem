@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+# NOTE: plugin/scripts/ is intentionally NOT ignored — the built .mjs entry
+# points are committed so the installed plugin runs without a build step.

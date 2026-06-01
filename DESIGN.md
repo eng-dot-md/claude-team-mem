@@ -126,9 +126,13 @@ So the native dir = `{real files: personal / unpublished / kept-back memory}` �
   The storage repo is private, but sanitize anyway.
 - v2: write `scope` at memory-creation time so classification is decided up front.
 
-## 6. Load (SessionStart, `command` hook)
+## 6. Load (SessionStart `command` hook → `node scripts/load.mjs`)
 
-1. Resolve the storage repo (env / config); if disabled → `exit 0`.
+The hook runs `node "$CLAUDE_PLUGIN_ROOT/scripts/load.mjs"` (the bundle of
+`src/bin/load.ts`). It reads the SessionStart payload from stdin to get `cwd`,
+then:
+
+1. Resolve the storage repo (env / config); if disabled → inject nothing, `exit 0`.
 2. Ensure the checkout: clone once (synchronous), then refresh in the
    **background** (`pull --ff-only`) so startup never blocks (this session uses
    the last synced copy; the next sees the update).
@@ -147,11 +151,23 @@ So the native dir = `{real files: personal / unpublished / kept-back memory}` �
    still inject the index (discoverability preserved; bodies readable from the
    checkout path).
 
-Fail-soft throughout; never blocks session start.
+To inject, `load.mjs` prints **exactly one** JSON object to stdout —
+`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<text>"}}`
+— or **nothing** when there is nothing to inject. stdout is reserved for that one
+object; all diagnostics go to stderr (`ctmLog`). The whole entry is wrapped in
+try/catch and **always exits 0**: fail-soft throughout, never blocks session start.
 
 ## 7. Publish (`/share-memory` skill; manual in v1)
 
-1. `resolve-repo.sh` → key (`<org>/<repo>`) / checkout / target / native paths; pull first.
+The skill (Claude) is the **reasoning** half (classify → sanitize → merge →
+confirm); the git **mechanics** are `scripts/publish.mjs` (the bundle of
+`src/bin/publish.ts` → `src/publish.ts`), invoked as
+`node "$CLAUDE_PLUGIN_ROOT/scripts/publish.mjs" --checkout-dir … --target-dir … [--native-dir …] --slug <foo.md> …`.
+
+1. Resolve paths — key (`<org>/<repo>`) / checkout / target / native — via the
+   plugin's resolver (`src/resolve.ts`, surfaced by `/team-memory status`); the
+   resolver clones the checkout once if absent (it does not pull; `publish.mjs`
+   rebases onto upstream before pushing).
 2. Read the native dir's real files (skip ones that are already symlinks — those
    are already team); classify; skip personal.
 3. For each team file: read the existing same-slug file in the checkout →
@@ -166,8 +182,11 @@ Fail-soft throughout; never blocks session start.
 5. No `MEMORY.md` is written (the index is derived at load time).
 6. Show a **review summary** (what will be shared / kept personal / redactions /
    merges) and wait for explicit confirmation.
-7. `publish.sh`: `git pull --rebase` → on conflict, Claude resolves (§9) →
-   commit → push (bounded retry on races). **Never force-push.**
+7. `publish.mjs`: stage exactly the named slug paths (exact path args, never
+   `git add -A`, never `git rm`) → commit only those pathspecs → `git pull --rebase`
+   → push (bounded retry on races); on conflict it aborts the rebase cleanly and
+   Claude resolves (§9) then re-runs. **Never force-push.** (The shared
+   pull-rebase-push helper `pushWithRebase` in `lib/git.ts` is reused by unshare.)
 8. **After a successful push, convert a published local file to a symlink only if
    its content is byte-identical to the pushed copy.** If sanitization or a merge
    changed the shared copy, **keep the local real file as-is** (no data loss); the
@@ -208,30 +227,68 @@ Fail-soft throughout; never blocks session start.
   published `foo.md`): don't overwrite the real file with a symlink — flag it as
   a semantic conflict for Claude to reconcile.
 
-## 10. Plugin structure
+## 10. Plugin structure (Node / TypeScript)
+
+The plugin is implemented in **TypeScript** and built to **zero-runtime-dependency
+ESM** with esbuild. Two trees, kept distinct:
+
+- **`plugin/`** — the *installable* plugin. This is the only thing a user's Claude
+  Code runs. It contains the manifest, hook wiring, the skills, and the **built**
+  `scripts/*.mjs` (committed, so installing needs no build step).
+- **`src/`** — the TypeScript we author. The hook/skill entry points live in
+  `src/bin/` and are bundled by esbuild into `plugin/scripts/*.mjs`. **Never
+  hand-edit `plugin/scripts/*.mjs`** — they are build outputs.
 
 ```
 claude-team-mem/                          (eng-dot-md/claude-team-mem)
 ├─ .claude-plugin/
-│   ├─ plugin.json                        name / version / description / author
-│   └─ marketplace.json                   so it installs as a marketplace
-├─ hooks/hooks.json                       SessionStart → load   [v2: Stop → auto-publish]
-├─ skills/
-│   ├─ share-memory/SKILL.md              classify → sanitize → upsert → resolve → publish
-│   └─ team-memory/SKILL.md               manage config / status / sync / unshare
-├─ scripts/
-│   ├─ lib.sh                             parse remote→host/owner/name; JSON i/o; checkout path; circular guard; native-dir location
-│   ├─ resolve-repo.sh                    env/config resolution; clone/pull; print key + paths
-│   ├─ load.sh                            SessionStart: resolve + bg-pull + symlink reconcile + inject derived index
-│   └─ publish.sh                         pull --rebase / commit / push / retry
+│   └─ marketplace.json                   single-plugin marketplace; "source": "./plugin"
+├─ plugin/                                 ← the installable plugin (what ships)
+│   ├─ .claude-plugin/plugin.json          name / version / description / author
+│   ├─ hooks/hooks.json                    SessionStart → node scripts/load.mjs  [v2: Stop → auto-publish]
+│   ├─ skills/
+│   │   ├─ share-memory/SKILL.md           classify → sanitize → upsert → merge → invoke publish.mjs
+│   │   └─ team-memory/SKILL.md            manage config / status / sync / unshare (invokes unshare.mjs)
+│   └─ scripts/                            ← BUILT by esbuild from src/bin/ (committed; do not hand-edit)
+│       ├─ load.mjs                        SessionStart entry  (from src/bin/load.ts)
+│       ├─ publish.mjs                     publish mechanics   (from src/bin/publish.ts)
+│       └─ unshare.mjs                     unshare mechanics   (from src/bin/unshare.ts)
+├─ src/                                     ← the TypeScript we author
+│   ├─ bin/{load,publish,unshare}.ts       thin CLI entry points (argv/stdin parse → core; emit JSON)
+│   ├─ {load,publish,unshare}.ts           core flows (the SessionStart load, publish + unshare mechanics)
+│   ├─ resolve.ts                          env/config → storage URL; anti-circular guard; clone-once; derive paths
+│   ├─ types.ts                            shared interfaces (Resolution, ParsedRemote, Memory, Config)
+│   └─ lib/
+│       ├─ git.ts                          execFileSync('git', argsArray); cloneOnce; ensureIdentity; pushWithRebase
+│       ├─ remote.ts                       parse remote → {host, owner, repo}; sameRepo; autoStorageUrl
+│       ├─ paths.ts                        dataDir; configPath; checkout dir from URL; project key; native-dir slug
+│       ├─ config.ts                       read/write <dataDir>/config.json (fail-soft defaults)
+│       ├─ frontmatter.ts                  minimal YAML-frontmatter parser; readMemory; isValidSlug
+│       ├─ guard.ts                        isCircular (storage == origin, or cwd inside a checkout)
+│       └─ log.ts                          ctmLog → stderr (stdout is reserved for hook JSON)
+├─ scripts/build.mjs                       esbuild: src/bin/*.ts → plugin/scripts/*.mjs (esm, node, bundled)
+├─ tests/{lib,e2e}.test.ts                 node:test — pure-logic units + offline end-to-end on the built .mjs
+├─ package.json                            type:module; scripts: build / typecheck / test; devDeps only
+├─ tsconfig.json                           strict + noUncheckedIndexedAccess + verbatimModuleSyntax
+├─ DESIGN.md
 └─ README.md
 ```
 
-- Scripts use `${CLAUDE_PLUGIN_ROOT}` to self-locate and `${CLAUDE_PLUGIN_DATA}`
-  (**default `~/.claude-team-mem`** when not set by Claude Code) as the single data
-  dir for both checkouts (`${CLAUDE_PLUGIN_DATA}/repos/<storage-id>/`) and config.
-- The **config** is `${CLAUDE_PLUGIN_DATA}/config.json` (one canonical location).
-- macOS bash 3.2 compatible; jq or python3 for JSON; fail-soft.
+- **Build / check / test (pnpm):** `pnpm build` runs `scripts/build.mjs` (esbuild)
+  to bundle `src/bin/{load,publish,unshare}.ts` → `plugin/scripts/{load,publish,unshare}.mjs`
+  (ESM, `platform: node`, bundled, **no runtime deps**). `pnpm typecheck` is
+  `tsc --noEmit`. `pnpm test` runs `node --import tsx --test tests/*.test.ts`.
+- **Entry points run under `node`.** The SessionStart hook and the skills invoke
+  the built scripts as `node "$CLAUDE_PLUGIN_ROOT/scripts/<name>.mjs"`; `${CLAUDE_PLUGIN_ROOT}`
+  self-locates the installed `plugin/` dir.
+- **Data dir** is `${CLAUDE_PLUGIN_DATA}` (provided by Claude Code; **default
+  `~/.claude-team-mem`** when unset), the single home for both checkouts
+  (`${CLAUDE_PLUGIN_DATA}/repos/<storage-id>/`) and the **config**
+  (`${CLAUDE_PLUGIN_DATA}/config.json`, one canonical location).
+- **All git** goes through `lib/git.ts` → `execFileSync('git', [args…])` (an args
+  array, never a shell string) so slugs/paths are never glob-expanded or
+  word-split. Everything is **fail-soft**; the SessionStart load never throws and
+  never blocks. Target runtime: **Node ≥ 20** on macOS / darwin.
 
 ## 11. Caveats (validate / handle during implementation)
 
@@ -251,22 +308,30 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 
 ## 12. Build plan
 
-**v1 (plugin MVP)**
-1. Plugin scaffold (`plugin.json` / `marketplace.json` / `README.md`).
-2. `lib.sh` + `resolve-repo.sh`: env → config → disabled resolution,
-   host/owner/protocol parsing, circular guard, checkout keyed by storage-repo
-   identity under `${CLAUDE_PLUGIN_DATA}/repos/`, config at
-   `${CLAUDE_PLUGIN_DATA}/config.json` (`CLAUDE_PLUGIN_DATA` defaults to `~/.claude-team-mem`).
-3. `load.sh` + `hooks/hooks.json`: SessionStart symlink reconcile + index injection.
-4. `skills/share-memory` + `publish.sh`: classify / sanitize / upsert / merge /
-   conflict resolution / dedupe / convert-to-symlink (only when identical) after push.
-5. `skills/team-memory`: manage config (`enable <owner> [repo]` / list / status /
-   sync) and **`unshare <slug>`** (ownership check + tombstone — the only deleter).
+**v1 (plugin MVP)** — implemented in Node/TypeScript (built to `plugin/scripts/*.mjs`).
+1. Plugin scaffold + toolchain: `.claude-plugin/marketplace.json` (`source: ./plugin`),
+   `plugin/.claude-plugin/plugin.json`, `package.json` / `tsconfig.json` /
+   `scripts/build.mjs` (esbuild), `README.md`.
+2. `src/lib/` + `src/resolve.ts`: env → config → disabled resolution
+   (`remote.ts` host/owner/protocol parsing), circular guard (`guard.ts`), checkout
+   keyed by storage-repo identity under `${CLAUDE_PLUGIN_DATA}/repos/` (`paths.ts`),
+   config at `${CLAUDE_PLUGIN_DATA}/config.json` (`config.ts`; `CLAUDE_PLUGIN_DATA`
+   defaults to `~/.claude-team-mem`). All git via `lib/git.ts` (args-array, fail-soft).
+3. `src/load.ts` + `src/bin/load.ts` (→ `load.mjs`) + `plugin/hooks/hooks.json`:
+   SessionStart background-pull + symlink reconcile + index injection.
+4. `plugin/skills/share-memory` + `src/publish.ts` + `src/bin/publish.ts` (→
+   `publish.mjs`): classify / sanitize / upsert / merge / conflict resolution
+   (skill) and stage-exact / commit / rebase-push / dedupe / convert-to-symlink
+   (only when identical) after push (mechanics).
+5. `plugin/skills/team-memory`: manage config (`enable <owner> [repo]` / `list` /
+   `status` / `sync`) and **`unshare <slug>`** (ownership check + tombstone — the
+   only deleter; mechanics in `src/unshare.ts` → `unshare.mjs`).
 6. Migrate the interim `.claude/` prototype files (skill + hook + config) into the
    plugin; revert the interim `.claude/settings.json` SessionStart edit; drop the
    interim `team-memory.json`.
-7. Isolated end-to-end test: throwaway storage repo + isolated `HOME`/`PLUGIN_DATA`
-   (no network / org touched).
+7. Isolated end-to-end test (`tests/e2e.test.ts`, `node:test`): drive the built
+   `plugin/scripts/*.mjs` against a bare local "remote" with an isolated
+   `HOME`/`CLAUDE_PLUGIN_DATA` (fully offline — no network / org touched).
 
 **v2 (automation & polish)**
 - `Stop` hook to auto-publish (mirrors the existing CLAUDE.md-audit Stop hook),
@@ -281,4 +346,7 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
    (one repo can serve several orgs — see §3).
 2. Configure `${CLAUDE_PLUGIN_DATA}/config.json` (default `~/.claude-team-mem/config.json`),
    e.g. `"owners": { "<your-org>": "auto" }`.
-3. Install + enable the plugin; ensure `git` + `jq` (or python3) are on PATH.
+3. Install + enable the plugin; ensure `git` and **`node` (≥ 20)** are on PATH
+   (the entry points run under `node`; no other runtime deps). The `/team-memory`
+   skill uses `jq` for config edits when present and falls back to editing the JSON
+   directly when it is not.
