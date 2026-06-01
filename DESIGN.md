@@ -1,4 +1,4 @@
-# claude-team-memory — Design
+# claude-team-mem — Design
 
 A lightweight Claude Code plugin that shares a team-relevant subset of Claude's
 per-project memory across a team. It is built **on top of** Claude's native
@@ -10,7 +10,7 @@ file-based memory, not as a replacement.
 
 - **Build on native memory.** Native memory stays the authoring + recall engine.
   The plugin is only a thin **git sync layer** — classify → publish → load —
-  organized per project and per owner.
+  organized per project and per team.
 - **Lightweight.** Git is the transport, the store, and the merge model. No
   server, no database.
 - **Explicit opt-in.** The plugin activates only for GitHub owners listed in a
@@ -18,22 +18,23 @@ file-based memory, not as a replacement.
   are never touched.
 - **Safe.** The storage repo is private; the team path always sanitizes;
   duplicate and circular creation are prevented structurally; conflicts
-  auto-resolve.
+  auto-resolve; shared storage is never deleted implicitly.
 
 ## 2. Two repos — keep them distinct (the basis for "no circular creation")
 
 | Role | Repo | Holds | Lifecycle |
 |---|---|---|---|
-| **Plugin** (the tool) | `eng-dot-md/claude-team-memory` | code only: hooks / skills / scripts | installed via marketplace |
-| **Storage** (the data) | configured per owner | the actual memory, one subdirectory per project | created once per GitHub owner |
+| **Plugin** (the tool) | `eng-dot-md/claude-team-mem` | code only: hooks / skills / scripts | installed via marketplace |
+| **Storage** (the data) | configured per team (one or more orgs) | the actual memory, one subtree per project keyed `<org>/<repo>` | created once per team |
 
 ```
-          classify / publish ▲            ▼ load (symlink + inject index)
- ┌────────── local, per machine ────────┐  ┌─── Storage repo (private, per owner) ──┐
- │ native memory + plugin's symlink layer│←→│ <project>/memory/<slug>.md             │
- └───────────────────────────────────────┘  │ (the only physical copy lives here)    │
-                                             └────────────────────────────────────────┘
+  local, per machine                          Storage repo (private, per team)
+  native memory + plugin's symlink layer  ──publish──▶  <org>/<repo>/memory/<slug>.md
+                                          ◀───load───   (the only physical copy lives here)
 ```
+
+A team's storage repo can hold projects from **several GitHub orgs**; that is why
+entries are keyed by `<org>/<repo>` (not just the repo name) — see §3.
 
 ## 3. Resolution: owner → storage repo (config-driven)
 
@@ -46,56 +47,71 @@ For whatever project you are in, resolve its storage repo in this order:
    - hit → use the mapped value (`"auto"` = `<host>:<owner>/claude-team-memory`,
      or an explicit `owner/repo` / full git URL);
    - miss → **disabled; the plugin no-ops for that repo.**
-3. **Anti-circular guard** on top: if the resolved storage repo *is* the current
-   project (storage == current repo / project key == storage repo name / cwd is
-   inside the plugin-data checkout) → disabled.
+3. **Anti-circular guard** on top: if the resolved storage repo URL equals the
+   current project's `origin`, or cwd is inside a plugin-data checkout → disabled.
 
-- **Project key** (subdirectory) = the project repo basename → `app/`,
-  `lib/`, `infra/`.
-- **Local checkout**: `${CLAUDE_PLUGIN_DATA}/repos/<host>__<owner>/` — one per
-  owner, so you can work across orgs on one machine.
+- **Project key** (subtree inside the storage repo) = **`<org>/<repo>`** — the
+  project's owner **and** repo name, e.g. `acme/app/`, `acme/lib/`, `globex/api/`.
+  Keying by `<org>/<repo>` (not just the repo name) lets **one storage repo serve a
+  team spanning multiple GitHub orgs** without collisions (`acme/app` vs
+  `globex/app`).
+- **Local checkout is keyed by the resolved storage-repo identity**, not by the
+  project owner:
+  `${CLAUDE_PLUGIN_DATA}/repos/<storage-host>__<storage-owner>__<storage-repo>/`.
+  So two projects that override (`CLAUDE_TEAM_MEMORY_REPO` / explicit URLs) to
+  *different* storage repos never share a checkout (no cross-corruption), and
+  several orgs mapped to the *same* storage repo share one checkout. The
+  `<org>/<repo>` project key is a subtree inside that checkout.
 
-**Config** `~/.claude/claude-team-memory.json` (user-level; manageable via the
-`/team-memory` skill):
+**Config** — canonical path `~/.claude/claude-team-memory.json` (user-level,
+manageable via the `/team-memory` skill), with `${CLAUDE_PLUGIN_DATA}/config.json`
+as a fallback if the canonical file is absent:
 
 ```json
 {
   "owners": {
-    "acme": "auto",
-    "globex": "git@github.com:globex/shared-claude-mem.git"
+    "acme":      "auto",
+    "acme-labs": "git@github.com:acme/claude-team-memory.git",
+    "globex":    "git@github.com:globex/shared-claude-mem.git"
   },
   "maxIndexBytes": 20000
 }
 ```
 
-"Enabling an owner" = adding a line to `owners`. With `"acme": "auto"`, a
-project at `acme/<repo>` resolves to the storage repo `acme/claude-team-memory`.
+- `"auto"` resolves to `<owner>/claude-team-memory` (same host/protocol as the project).
+- **Multi-org team:** point several orgs at one repo (here `acme` + `acme-labs` →
+  `acme/claude-team-memory`); their projects stay separated by the `<org>/<repo>`
+  key (`acme/app`, `acme-labs/app`).
+- Owners not listed are no-ops — **no team is forced to put memory anywhere it
+  doesn't configure**, and each org can equally have its own repo.
 
 ## 4. Local layout — shared memory lives as symlinks in the native dir
 
 ```
-~/.claude/projects/<repo-hash>/memory/         ← native memory dir for this project
-├─ my-personal.md          real file · personal · never leaves the machine
-├─ unpublished-idea.md     real file · not yet published
-├─ foo.md            ──┐   symlink → one you published
-└─ teammate-bar.md ──┐ │   symlink → one a teammate shared
-                     │ │
-${CLAUDE_PLUGIN_DATA}/repos/github__acme/       ← clone of the storage repo (real bytes here)
-└─ app/memory/{foo.md, teammate-bar.md}    ◄──┘
+~/.claude/projects/<repo-hash>/memory/        ← native memory dir for this project
+├─ my-personal.md           real file · personal · never leaves the machine
+├─ unpublished-idea.md      real file · not yet published
+├─ foo.md                   symlink ┐  (one you published)
+└─ teammate-bar.md          symlink ┤  (one a teammate shared)
+                                    ▼
+${CLAUDE_PLUGIN_DATA}/repos/<storage-host>__<storage-owner>__<storage-repo>/   ← clone (real bytes)
+└─ <org>/<repo>/memory/{foo.md, teammate-bar.md}
 ```
 
 **Core idea:** the real bytes for a shared fact live in the checkout exactly
 once; the native dir holds a **symlink** to it. Consequences:
 
 - **Local is not deleted** — on publish, the local real file is converted to a
-  symlink.
+  symlink **only when its content is identical to the published copy**. If
+  sanitization or a merge changed the shared copy, the local real file is **kept**
+  (§7.8), so local-only content is never silently discarded.
 - **No duplication** — a fact has a single physical copy, so it can never appear
   twice in context.
 - **Native recall is preserved** — the native memory system follows symlinks.
 - **Offline fallback** — the checkout is a local cache; shared memory is still
   readable offline.
 
-So the native dir = `{real files: personal / unpublished memory}` ∪
+So the native dir = `{real files: personal / unpublished / kept-back memory}` ∪
 `{symlinks: published team memory (yours + teammates')}`.
 
 ## 5. Classification (personal vs team)
@@ -115,10 +131,11 @@ So the native dir = `{real files: personal / unpublished memory}` ∪
 2. Ensure the checkout: clone once (synchronous), then refresh in the
    **background** (`pull --ff-only`) so startup never blocks (this session uses
    the last synced copy; the next sees the update).
-3. **Reconcile this project's symlinks:** for each `checkout/<key>/memory/*.md`,
-   ensure a symlink in the native dir; prune dangling links into the checkout;
-   **never touch real files**; if the native dir already has a real file with the
-   same name as a team file → flag as a semantic conflict (see §9).
+3. **Reconcile this project's symlinks:** for each
+   `checkout/<org>/<repo>/memory/*.md`, ensure a symlink in the native dir; prune
+   dangling links into the checkout; **never touch real files**; if the native dir
+   already has a real file with the same name as a team file → flag as a semantic
+   conflict (see §9), don't overwrite it.
 4. Inject a **freshly derived index** (from each file's `name`/`description`
    frontmatter; fall back to the first `#` heading / filename) as
    `- [Title](slug.md) — hook`, with a preamble (team-shared / don't re-save
@@ -133,22 +150,28 @@ Fail-soft throughout; never blocks session start.
 
 ## 7. Publish (`/share-memory` skill; manual in v1)
 
-1. `resolve-repo.sh` → key / checkout / target / native paths; pull first.
+1. `resolve-repo.sh` → key (`<org>/<repo>`) / checkout / target / native paths; pull first.
 2. Read the native dir's real files (skip ones that are already symlinks — those
    are already team); classify; skip personal.
 3. For each team file: read the existing same-slug file in the checkout →
    sanitize → if diverged, **semantically merge (don't clobber others'
-   additions)** → write to `checkout/<key>/memory/<slug>.md`; skip if
+   additions)** → write to `checkout/<org>/<repo>/memory/<slug>.md`; skip if
    byte-identical (dedupe, no churn).
-4. Remove from the checkout any file that is now personal/deleted locally.
+4. **Publish never deletes from the checkout.** Local absence is *not* authority to
+   delete — a file can be missing because reconcile degraded, was never loaded, or
+   belongs to a teammate. Removing shared memory is an explicit
+   `/team-memory unshare <slug>` action that checks ownership / writes a tombstone
+   before deleting, so publish can never silently erase teammate-authored memory.
 5. No `MEMORY.md` is written (the index is derived at load time).
 6. Show a **review summary** (what will be shared / kept personal / redactions /
    merges) and wait for explicit confirmation.
 7. `publish.sh`: `git pull --rebase` → on conflict, Claude resolves (§9) →
    commit → push (bounded retry on races). **Never force-push.**
-8. **After a successful push**, convert each published local real file into a
-   symlink to the checkout copy; if push failed, keep the real file (no data
-   loss) and report.
+8. **After a successful push, convert a published local file to a symlink only if
+   its content is byte-identical to the pushed copy.** If sanitization or a merge
+   changed the shared copy, **keep the local real file as-is** (no data loss); the
+   skill offers to split the redacted / local-only part into a `personal` memory so
+   nothing sensitive is lost *or* shared. If push failed, keep the real file and report.
 
 ## 8. Deduplication & anti-circular
 
@@ -159,11 +182,13 @@ Fail-soft throughout; never blocks session start.
 3. **Provenance.** The injected preamble says "don't re-save / re-share";
    team-origin files carry `metadata.origin: team` and publish excludes them;
    symlinked-in files are inherently team and aren't treated as new local work.
-4. **Self-reference guard** (§3): storage == current / key == storage name / cwd
-   inside plugin-data → fully disabled.
+4. **Self-reference guard** (§3): storage URL == current project's `origin`, or
+   cwd inside a plugin-data checkout → fully disabled.
 5. **Single physical copy** (checkout) + local symlink → there are never two real
    copies → no in-context duplication (so the symlink model needs no "dedupe on
    load" step at all).
+6. **No implicit deletion** (§7.4): shared storage is only removed via an explicit,
+   ownership-checked `/team-memory unshare`.
 
 ## 9. Conflict resolution (Claude resolves it)
 
@@ -185,7 +210,7 @@ Fail-soft throughout; never blocks session start.
 ## 10. Plugin structure
 
 ```
-claude-team-memory/                       (eng-dot-md/claude-team-memory)
+claude-team-mem/                          (eng-dot-md/claude-team-mem)
 ├─ .claude-plugin/
 │   ├─ plugin.json                        name / version / description / author
 │   └─ marketplace.json                   so it installs as a marketplace
@@ -201,9 +226,11 @@ claude-team-memory/                       (eng-dot-md/claude-team-memory)
 └─ README.md
 ```
 
-Scripts use `${CLAUDE_PLUGIN_ROOT}` to self-locate and `${CLAUDE_PLUGIN_DATA}` for
-the checkout + config; macOS bash 3.2 compatible; jq or python3 for JSON;
-fail-soft.
+- Scripts use `${CLAUDE_PLUGIN_ROOT}` to self-locate and `${CLAUDE_PLUGIN_DATA}`
+  for the repo **checkouts** (`${CLAUDE_PLUGIN_DATA}/repos/<storage-id>/`).
+- The **config** is read from `~/.claude/claude-team-memory.json` (canonical),
+  falling back to `${CLAUDE_PLUGIN_DATA}/config.json` if the former is absent.
+- macOS bash 3.2 compatible; jq or python3 for JSON; fail-soft.
 
 ## 11. Caveats (validate / handle during implementation)
 
@@ -223,12 +250,14 @@ fail-soft.
 **v1 (plugin MVP)**
 1. Plugin scaffold (`plugin.json` / `marketplace.json` / `README.md`).
 2. `lib.sh` + `resolve-repo.sh`: env → config → disabled resolution,
-   host/owner/protocol parsing, circular guard, checkout + config under
-   `${CLAUDE_PLUGIN_DATA}`.
+   host/owner/protocol parsing, circular guard, checkout keyed by storage-repo
+   identity under `${CLAUDE_PLUGIN_DATA}/repos/`, config read from
+   `~/.claude/claude-team-memory.json` (fallback `${CLAUDE_PLUGIN_DATA}/config.json`).
 3. `load.sh` + `hooks/hooks.json`: SessionStart symlink reconcile + index injection.
 4. `skills/share-memory` + `publish.sh`: classify / sanitize / upsert / merge /
-   conflict resolution / dedupe / convert-to-symlink after push.
-5. `skills/team-memory`: manage config (`enable <owner> [repo]` / list / status / sync).
+   conflict resolution / dedupe / convert-to-symlink (only when identical) after push.
+5. `skills/team-memory`: manage config (`enable <owner> [repo]` / list / status /
+   sync) and **`unshare <slug>`** (ownership check + tombstone — the only deleter).
 6. Migrate the interim `.claude/` prototype files (skill + hook + config) into the
    plugin; revert the interim `.claude/settings.json` SessionStart edit; drop the
    interim `team-memory.json`.
@@ -242,8 +271,10 @@ fail-soft.
 - Flesh out `/team-memory status / unshare / sync`.
 - Optional: CI-generated human-readable README overview of the storage repo.
 
-## 13. Dogfood setup (one-time)
+## 13. Setup (one-time)
 
-1. Create a private `<your-org>/claude-team-memory`.
-2. Configure `~/.claude/claude-team-memory.json` with `"owners": { "<your-org>": "auto" }`.
+1. Create a private storage repo for the team, e.g. `<your-org>/claude-team-memory`
+   (one repo can serve several orgs — see §3).
+2. Configure `~/.claude/claude-team-memory.json`, e.g.
+   `"owners": { "<your-org>": "auto" }`.
 3. Install + enable the plugin; ensure `git` + `jq` (or python3) are on PATH.
