@@ -225,10 +225,16 @@ Notes:
   **Release** → *Run workflow*, then choose a `patch` / `minor` / `major` bump (or
   pass an explicit `version`). It re-runs the full gate, bumps the version across
   `package.json`, `plugin/.claude-plugin/plugin.json`, and
-  `.claude-plugin/marketplace.json`, commits + tags `vX.Y.Z`, and publishes a
-  GitHub Release with auto-generated notes. The plugin ships via the Claude Code
-  marketplace (git `source: ./plugin`), so the tag / GitHub Release is the
-  artifact — there is no npm package.
+  `.claude-plugin/marketplace.json`, commits + tags `vX.Y.Z`, publishes the
+  unscoped `claude-team-mem` package to **npm**, and publishes a **GitHub Release**
+  with auto-generated notes.
+- **npm publish is tokenless** — it uses npm **Trusted Publishing (OIDC)**: the job
+  has `id-token: write` and npm exchanges a GitHub OIDC token for a short-lived
+  credential (with provenance). There is **no `NPM_TOKEN`**. **One-time setup,
+  required before the first release:** on npmjs.com add a **Trusted Publisher** for
+  the `claude-team-mem` package → GitHub repo `eng-dot-md/claude-team-mem`, workflow
+  `release.yml`. The npm tarball is just the installable `plugin/` subtree (+ docs);
+  Claude Code itself still installs via the marketplace git `source: ./plugin`.
 
 ## License
 

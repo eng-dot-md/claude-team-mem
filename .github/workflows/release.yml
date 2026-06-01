@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm Trusted Publishing (OIDC): tokenless publish + provenance
 
 concurrency:
   group: release
@@ -119,6 +120,16 @@ jobs:
           git tag -a "$TAG" -m "$TAG"
           git push origin HEAD
           git push origin "$TAG"
+
+      - name: Publish to npm (OIDC Trusted Publishing — no token)
+        run: |
+          # No NODE_AUTH_TOKEN / NPM_TOKEN. With `id-token: write` and a Trusted
+          # Publisher configured on npmjs.com for this repo + workflow, npm exchanges
+          # the GitHub OIDC token for a short-lived credential and attaches
+          # provenance. Trusted Publishing requires npm >= 11.5.1, so refresh the
+          # runner's bundled npm first.
+          npm install -g npm@latest
+          npm publish --provenance --access public
 
       - name: Publish GitHub Release (auto-generated notes)
         env:
