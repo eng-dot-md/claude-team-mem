@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm before setup-node so setup-node's pnpm cache can resolve it.
+      # pnpm version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # --ignore-scripts: skip dependency postinstall scripts. The only one is
+      # esbuild's, which is unnecessary (its platform binary ships in the
+      # @esbuild/<platform> optional dep), and pnpm 11+ otherwise fails the install
+      # with ERR_PNPM_IGNORED_BUILDS for the un-approved build.
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build (esbuild → plugin/scripts/*.mjs)
+        run: pnpm build
+
+      # The built scripts are COMMITTED so installs need no build step. Guard that
+      # invariant: a fresh build must not change them — otherwise src/ was edited
+      # without re-running `pnpm build`.
+      - name: Verify committed build artifacts are in sync with src/
+        run: |
+          if ! git diff --quiet -- plugin/scripts; then
+            echo "::error::plugin/scripts/*.mjs are stale — run 'pnpm build' and commit the result."
+            git --no-pager diff --stat -- plugin/scripts
+            exit 1
+          fi
+
+      - name: Test (node:test — units + offline end-to-end)
+        run: pnpm test

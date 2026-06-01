@@ -626,7 +626,6 @@ function buildSessionContext(projectRoot) {
       ctmLog("load: enabled but missing checkout/target paths; skipping");
       return { context: null };
     }
-    backgroundPull(checkoutDir);
     const entries = collectTeamEntries(targetMemoryDir);
     let rc = { realClashes: [], unrelatedSymlinkClashes: [] };
     const nativeDir = ensureNativeDir(projectRoot);
@@ -635,6 +634,7 @@ function buildSessionContext(projectRoot) {
     } else {
       ctmLog("load: native dir unusable; injecting index only (no symlinking)");
     }
+    backgroundPull(checkoutDir);
     if (entries.length === 0 && rc.realClashes.length === 0 && rc.unrelatedSymlinkClashes.length === 0) {
       return { context: null };
     }
@@ -656,6 +656,7 @@ function buildSessionContext(projectRoot) {
 }
 function backgroundPull(checkoutDir) {
   try {
+    if (process.env.CLAUDE_TEAM_MEM_NO_BG_PULL) return;
     if (!existsSync4(checkoutDir)) return;
     const child = spawn("git", ["pull", "--ff-only"], {
       cwd: checkoutDir,

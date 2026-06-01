@@ -193,11 +193,16 @@ using **pnpm**. Authored code lives in `src/`; the build emits the committed
 `plugin/scripts/*.mjs` the installed plugin runs.
 
 ```bash
-pnpm install      # dev toolchain only (esbuild, tsx, typescript) — no runtime deps
+pnpm install --ignore-scripts   # dev toolchain only (esbuild, tsx, typescript); no runtime deps
 pnpm build        # esbuild: src/bin/{load,publish,unshare,resolve}.ts → plugin/scripts/*.mjs
 pnpm typecheck    # tsc --noEmit (strict, noUncheckedIndexedAccess, verbatimModuleSyntax)
 pnpm test         # builds first, then node:test (units + offline end-to-end)
 ```
+
+> Use `--ignore-scripts` on install: the only dependency postinstall is esbuild's,
+> which is unnecessary (its platform binary ships in the `@esbuild/<platform>`
+> optional dependency), and pnpm 11+ otherwise fails the install with
+> `ERR_PNPM_IGNORED_BUILDS`. Explicit `pnpm run` scripts (build/test) are unaffected.
 
 Notes:
 
@@ -210,6 +215,28 @@ Notes:
 - To try it against a local checkout of Claude Code, point the marketplace at the
   repo: `/plugin marketplace add /path/to/claude-team-mem` (the manifest's
   `"source": "./plugin"` resolves the installable subtree).
+
+## CI & Releases
+
+- **CI** (`.github/workflows/ci.yml`) runs on every PR and push to `main`: install
+  → typecheck → build → verify the committed `plugin/scripts/*.mjs` match a fresh
+  build → test.
+- **Releases** (`.github/workflows/release.yml`) are cut manually: Actions →
+  **Release** → *Run workflow*, then choose a `patch` / `minor` / `major` bump (or
+  pass an explicit `version`). It re-runs the full gate, bumps the version across
+  `package.json`, `plugin/.claude-plugin/plugin.json`, and
+  `.claude-plugin/marketplace.json`, commits + tags `vX.Y.Z`, publishes the
+  unscoped `claude-team-mem` package to **npm** (`pnpm publish`), and publishes a
+  **GitHub Release** with auto-generated notes.
+- **Publishing is tokenless** — `pnpm publish` uses npm **Trusted Publishing
+  (OIDC)**: the job has `id-token: write` and pnpm fetches a short-lived credential
+  via OIDC, attaching provenance automatically. There is **no `NPM_TOKEN`**.
+  (Requires pnpm ≥ 11.0.9 for the OIDC fix — pinned `11.5.0` via `packageManager`.)
+  **One-time setup, required before the first release:** on npmjs.com add a
+  **Trusted Publisher** for the `claude-team-mem` package → GitHub repo
+  `eng-dot-md/claude-team-mem`, workflow `release.yml`. The npm tarball is just the
+  installable `plugin/` subtree (+ docs); Claude Code itself still installs via the
+  marketplace git `source: ./plugin`.
 
 ## License
 

@@ -3,8 +3,15 @@
   "version": "0.1.0",
   "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo.",
   "type": "module",
-  "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eng-dot-md/claude-team-mem.git"
+  },
+  "files": [
+    "plugin",
+    "DESIGN.md"
+  ],
   "packageManager": "pnpm@11.5.0",
   "engines": {
     "node": ">=20"

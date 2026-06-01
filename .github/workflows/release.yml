@@ -1,0 +1,137 @@
+name: Release
+
+# Manual "release cut": bump the version across the manifests, tag it, and publish
+# a GitHub Release. The plugin is distributed via the Claude Code marketplace
+# (git source ./plugin) — there is no npm package — so "publish" == GitHub Release.
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Semver bump (ignored when "version" is set)'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: 'Explicit version X.Y.Z (overrides release_type)'
+        type: string
+        required: false
+
+permissions:
+  contents: write
+  id-token: write # npm Trusted Publishing (OIDC): tokenless publish + provenance
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so --generate-notes and tag checks work
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # --ignore-scripts: esbuild's postinstall is unnecessary (binary ships in its
+      # @esbuild/<platform> optional dep) and pnpm 11+ would otherwise fail with
+      # ERR_PNPM_IGNORED_BUILDS for the un-approved build.
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Gate — never cut a release that doesn't typecheck, build, and test.
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Verify committed build artifacts are in sync with src/
+        run: |
+          if ! git diff --quiet -- plugin/scripts; then
+            echo "::error::plugin/scripts/*.mjs are stale — run 'pnpm build' and commit before releasing."
+            exit 1
+          fi
+      - name: Test
+        run: pnpm test
+
+      - name: Compute next version
+        id: ver
+        env:
+          REL_TYPE: ${{ inputs.release_type }}
+          REL_VERSION: ${{ inputs.version }}
+        run: |
+          NEXT=$(node -e '
+            const cur = require("./plugin/.claude-plugin/plugin.json").version;
+            const explicit = (process.env.REL_VERSION || "").trim();
+            if (explicit) {
+              if (!/^\d+\.\d+\.\d+$/.test(explicit)) { console.error("bad version: " + explicit); process.exit(1); }
+              console.log(explicit); process.exit(0);
+            }
+            const [a, b, c] = cur.split(".").map(Number);
+            const t = process.env.REL_TYPE || "patch";
+            console.log(t === "major" ? `${a + 1}.0.0` : t === "minor" ? `${a}.${b + 1}.0` : `${a}.${b}.${c + 1}`);
+          ')
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "tag=v$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$NEXT"
+
+      - name: Refuse if the tag already exists
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git fetch --tags --quiet
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::tag $TAG already exists"; exit 1
+          fi
+
+      - name: Bump version across manifests
+        env:
+          NEW_VERSION: ${{ steps.ver.outputs.next }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const v = process.env.NEW_VERSION;
+            for (const f of ["package.json", "plugin/.claude-plugin/plugin.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8"));
+              j.version = v;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }
+            const mf = ".claude-plugin/marketplace.json";
+            const m = JSON.parse(fs.readFileSync(mf, "utf8"));
+            if (m.plugins && m.plugins[0]) m.plugins[0].version = v;
+            fs.writeFileSync(mf, JSON.stringify(m, null, 2) + "\n");
+          '
+
+      - name: Rebuild with the bumped version
+        run: pnpm build
+
+      - name: Commit, tag, and push
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): $TAG [skip ci]"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin HEAD
+          git push origin "$TAG"
+
+      - name: Publish to npm via pnpm (OIDC Trusted Publishing — no token)
+        run: pnpm publish --access public --no-git-checks
+        # No NODE_AUTH_TOKEN / NPM_TOKEN. With `id-token: write` and a Trusted
+        # Publisher configured on npmjs.com for this repo + workflow, pnpm fetches a
+        # short-lived credential via OIDC and attaches provenance automatically (no
+        # --provenance flag). pnpm >= 11.0.9 fixed the OIDC 404 regression
+        # (pnpm/pnpm#11526); this repo pins 11.5.0 via packageManager. --no-git-checks:
+        # the workflow already bumped + committed + tagged this release.
+
+      - name: Publish GitHub Release (auto-generated notes)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: gh release create "$TAG" --title "$TAG" --generate-notes
