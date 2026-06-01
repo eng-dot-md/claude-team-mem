@@ -121,15 +121,14 @@ jobs:
           git push origin HEAD
           git push origin "$TAG"
 
-      - name: Publish to npm (OIDC Trusted Publishing — no token)
-        run: |
-          # No NODE_AUTH_TOKEN / NPM_TOKEN. With `id-token: write` and a Trusted
-          # Publisher configured on npmjs.com for this repo + workflow, npm exchanges
-          # the GitHub OIDC token for a short-lived credential and attaches
-          # provenance. Trusted Publishing requires npm >= 11.5.1, so refresh the
-          # runner's bundled npm first.
-          npm install -g npm@latest
-          npm publish --provenance --access public
+      - name: Publish to npm via pnpm (OIDC Trusted Publishing — no token)
+        run: pnpm publish --access public --no-git-checks
+        # No NODE_AUTH_TOKEN / NPM_TOKEN. With `id-token: write` and a Trusted
+        # Publisher configured on npmjs.com for this repo + workflow, pnpm fetches a
+        # short-lived credential via OIDC and attaches provenance automatically (no
+        # --provenance flag). pnpm >= 11.0.9 fixed the OIDC 404 regression
+        # (pnpm/pnpm#11526); this repo pins 11.5.0 via packageManager. --no-git-checks:
+        # the workflow already bumped + committed + tagged this release.
 
       - name: Publish GitHub Release (auto-generated notes)
         env:
