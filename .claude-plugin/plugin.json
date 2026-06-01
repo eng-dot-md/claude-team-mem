@@ -1,0 +1,18 @@
+{
+  "name": "claude-team-mem",
+  "version": "0.1.0",
+  "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo. A thin git sync layer (classify -> publish -> load) built on top of Claude's native file-based memory; no server, no database.",
+  "author": {
+    "name": "eng-dot-md"
+  },
+  "homepage": "https://github.com/eng-dot-md/claude-team-mem",
+  "repository": "https://github.com/eng-dot-md/claude-team-mem",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "team",
+    "git",
+    "sync",
+    "claude-code"
+  ]
+}

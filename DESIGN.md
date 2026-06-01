@@ -238,9 +238,12 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 1. **Whether a symlinked file participates in native recall** (via its frontmatter
    `description`) is not clearly documented → keep index injection as the floor
    (discoverability never lost; bodies readable from the checkout).
-2. **The native memory dir is keyed by a hash of the repo-root path** (a Claude
-   Code implementation detail) → pin + test the derivation; if it fails, inject
-   only and skip symlinking (degrade gracefully).
+2. **The native memory dir is keyed by a slug of the repo-root path** (a Claude
+   Code implementation detail): the project's absolute root path with every `/`
+   and `.` replaced by `-`, under `<base>/projects/<slug>/memory/`, where `<base>`
+   is `$CLAUDE_CONFIG_DIR` when set, else `~/.claude`. (e.g.
+   `/Users/u/ws/app` → `<base>/projects/-Users-u-ws-app/memory/`.) Pin + test the
+   derivation; if it fails, inject only and skip symlinking (degrade gracefully).
 3. Editing a symlinked memory edits the (uncommitted) file in the checkout.
 4. Dangling symlinks (plugin-data cleared / plugin uninstalled) → pruned at load.
 5. consolidate-memory and similar operations write through symlinks to the checkout.
