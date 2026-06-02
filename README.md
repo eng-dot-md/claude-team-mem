@@ -115,10 +115,10 @@ Follow [`DESIGN.md` §13](./DESIGN.md):
 
    `"auto"` resolves to `<your-org>/team-memory` on the same host and
    protocol as the project's `origin`. You can also map to an explicit
-   `owner/repo` or a full git URL (`/team-memory enable <org> someorg/somerepo`),
-   and point several orgs at one repo for a multi-org team. **Owners you do not
-   list are no-ops** — repos you merely cloned (open source, forks, …) are never
-   touched.
+   `owner/repo`, a full git URL, or a local path
+   (`/team-memory enable <org> someorg/somerepo`), and point several orgs at one
+   repo for a multi-org team. **Owners you do not list are no-ops** — repos you
+   merely cloned (open source, forks, …) are never touched.
 
    You can also edit the config file directly instead of using the skill. It is a
    small JSON document at `$CLAUDE_PLUGIN_DATA/config.json`:
@@ -137,8 +137,9 @@ Follow [`DESIGN.md` §13](./DESIGN.md):
    `/team-memory` skill uses `jq` for config edits when present and falls back to
    editing the JSON directly when it is not.)
 
-> Per-project override: set `CLAUDE_TEAM_MEMORY_REPO` (a full git URL or
-> `owner/repo`) in your environment to override config for the repo you are in.
+> Per-project override: set `CLAUDE_TEAM_MEMORY_REPO` (a full git URL, local
+> path, or `owner/repo`) in your environment to override config for the repo you
+> are in.
 
 ## Usage
 

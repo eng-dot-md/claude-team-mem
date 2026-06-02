@@ -4,6 +4,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { resolve as resolvePath } from 'node:path'
 import { parseRemote, sameRepo, autoStorageUrl } from '../src/lib/remote'
 import { parseFrontmatter, isValidSlug } from '../src/lib/frontmatter'
 import { slugForPath, pathInside } from '../src/lib/paths'
@@ -140,5 +141,17 @@ test('specToStorageUrl: auto, full URL, bare owner/repo', () => {
   assert.equal(
     specToStorageUrl('globex/shared', origin, 'acme'),
     'git@github.com:globex/shared.git',
+  )
+})
+
+test('specToStorageUrl: local paths are accepted and normalized', () => {
+  const origin = 'git@github.com:someuser/proj.git'
+  assert.equal(
+    specToStorageUrl('./storage.git', origin, 'acme', '/tmp/project'),
+    resolvePath('/tmp/project/storage.git'),
+  )
+  assert.equal(
+    specToStorageUrl('file:///tmp/storage.git', origin, 'acme'),
+    resolvePath('/tmp/storage.git'),
   )
 })

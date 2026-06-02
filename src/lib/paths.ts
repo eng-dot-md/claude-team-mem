@@ -1,9 +1,11 @@
 // Path derivation: data dir, config path, storage-repo checkout dir, and the
 // native (Claude Code) per-project memory dir. All pure/fail-soft.
 
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve, relative, isAbsolute } from 'node:path'
+import { basename, join, resolve, relative, isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ParsedRemote } from '../types'
 import { parseRemote } from './remote'
 import { ctmLog } from './log'
@@ -33,18 +35,64 @@ export function claudeConfigDir(): string {
  * (host__owner__repo) so different storage repos never share a checkout and
  * orgs mapped to the same repo do share one. Owner slashes (nested groups)
  * become `_` so the segment is a single safe dir name.
- * Returns null if the URL can't be parsed.
+ * Returns null if the URL/path can't be parsed.
  */
 export function checkoutDirFromUrl(url: string | undefined | null): string | null {
   const parsed = parseRemote(url)
-  if (!parsed) return null
-  return join(dataDir(), 'repos', projectKeyDirSegment(parsed))
+  if (parsed) return join(dataDir(), 'repos', projectKeyDirSegment(parsed))
+  const localPath = normalizeLocalRepoPath(url)
+  if (localPath) return join(dataDir(), 'repos', localRepoDirSegment(localPath))
+  return null
 }
 
 /** `<host>__<owner>__<repo>` with owner slashes flattened to `_` (filesystem-safe). */
 function projectKeyDirSegment(parsed: ParsedRemote): string {
   const owner = parsed.owner.replace(/\//g, '_')
   return `${parsed.host}__${owner}__${parsed.repo}`
+}
+
+/**
+ * Normalize an explicit local storage-repo spec. Accepted forms are absolute
+ * paths, `./...`, `../...`, `~/...`, `~`, and `file://...`. Bare names are not
+ * treated as paths so they do not collide with the `owner/repo` shorthand.
+ */
+export function normalizeLocalRepoPath(
+  spec: string | undefined | null,
+  baseDir: string = process.cwd(),
+): string | null {
+  if (!spec) return null
+  const s = spec.trim()
+  if (s.length === 0) return null
+
+  if (s.startsWith('file://')) {
+    try {
+      return resolve(fileURLToPath(s))
+    } catch {
+      return null
+    }
+  }
+
+  if (s === '~') return homedir()
+  if (s.startsWith('~/')) return resolve(homedir(), s.slice(2))
+  if (isAbsolute(s)) return resolve(s)
+  if (s.startsWith('./') || s.startsWith('../')) return resolve(baseDir, s)
+
+  return null
+}
+
+/** Stable, filesystem-safe checkout segment for a local storage repo path. */
+function localRepoDirSegment(localPath: string): string {
+  const name = safeSegment(stripGitSuffix(basename(localPath))) || 'repo'
+  const hash = createHash('sha256').update(resolve(localPath)).digest('hex').slice(0, 12)
+  return `local__${name}__${hash}`
+}
+
+function stripGitSuffix(s: string): string {
+  return s.endsWith('.git') ? s.slice(0, -4) : s
+}
+
+function safeSegment(s: string): string {
+  return s.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
 /**

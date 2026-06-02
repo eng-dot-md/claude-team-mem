@@ -132,8 +132,10 @@ function autoStorageUrl(origin, owner) {
 }
 
 // src/lib/paths.ts
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join, resolve, relative, isAbsolute } from "node:path";
+import { basename, join, resolve, relative, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 function dataDir() {
   const env = process.env.CLAUDE_PLUGIN_DATA;
   return env && env.length > 0 ? env : join(homedir(), ".claude-team-mem");
@@ -147,12 +149,42 @@ function claudeConfigDir() {
 }
 function checkoutDirFromUrl(url) {
   const parsed = parseRemote(url);
-  if (!parsed) return null;
-  return join(dataDir(), "repos", projectKeyDirSegment(parsed));
+  if (parsed) return join(dataDir(), "repos", projectKeyDirSegment(parsed));
+  const localPath = normalizeLocalRepoPath(url);
+  if (localPath) return join(dataDir(), "repos", localRepoDirSegment(localPath));
+  return null;
 }
 function projectKeyDirSegment(parsed) {
   const owner = parsed.owner.replace(/\//g, "_");
   return `${parsed.host}__${owner}__${parsed.repo}`;
+}
+function normalizeLocalRepoPath(spec, baseDir = process.cwd()) {
+  if (!spec) return null;
+  const s = spec.trim();
+  if (s.length === 0) return null;
+  if (s.startsWith("file://")) {
+    try {
+      return resolve(fileURLToPath(s));
+    } catch {
+      return null;
+    }
+  }
+  if (s === "~") return homedir();
+  if (s.startsWith("~/")) return resolve(homedir(), s.slice(2));
+  if (isAbsolute(s)) return resolve(s);
+  if (s.startsWith("./") || s.startsWith("../")) return resolve(baseDir, s);
+  return null;
+}
+function localRepoDirSegment(localPath) {
+  const name = safeSegment(stripGitSuffix(basename(localPath))) || "repo";
+  const hash = createHash("sha256").update(resolve(localPath)).digest("hex").slice(0, 12);
+  return `local__${name}__${hash}`;
+}
+function stripGitSuffix(s) {
+  return s.endsWith(".git") ? s.slice(0, -4) : s;
+}
+function safeSegment(s) {
+  return s.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
 }
 function projectKeyFromParsed(parsed) {
   if (!parsed) return null;
@@ -222,6 +254,8 @@ function ownerMapping(config, owner) {
 import { join as join2 } from "node:path";
 function isCircular(storageUrl, origin, cwd, dataDir2) {
   if (sameRepo(storageUrl, origin)) return true;
+  const localStoragePath = normalizeLocalRepoPath(storageUrl);
+  if (localStoragePath && pathInside(cwd, localStoragePath)) return true;
   const reposRoot = join2(dataDir2, "repos");
   if (pathInside(cwd, reposRoot)) return true;
   return false;
@@ -236,12 +270,14 @@ function projectOrigin(projectRoot) {
   const url = r.stdout.trim();
   return url.length > 0 ? url : null;
 }
-function specToStorageUrl(spec, origin, owner) {
+function specToStorageUrl(spec, origin, owner, baseDir = process.cwd()) {
   const s = spec.trim();
   if (s.length === 0) return null;
   if (s === "auto") {
     return owner ? autoStorageUrl(origin, owner) : null;
   }
+  const localPath = normalizeLocalRepoPath(s, baseDir);
+  if (localPath) return localPath;
   if (parseRemote(s)) return s;
   if (/^[^/\s:]+\/[^/\s:]+$/.test(s)) {
     const [graftOwner, graftRepo] = s.split("/");
@@ -265,7 +301,7 @@ function resolve2(projectRoot) {
     let reason = "";
     const envSpec = process.env.CLAUDE_TEAM_MEMORY_REPO;
     if (envSpec && envSpec.trim().length > 0) {
-      storageUrl = specToStorageUrl(envSpec.trim(), origin, projectOwner);
+      storageUrl = specToStorageUrl(envSpec.trim(), origin, projectOwner, projectRoot);
       if (!storageUrl) return disabled(`env CLAUDE_TEAM_MEMORY_REPO is set but unparseable: ${envSpec}`);
       reason = `env CLAUDE_TEAM_MEMORY_REPO -> ${storageUrl}`;
     } else {
@@ -273,7 +309,7 @@ function resolve2(projectRoot) {
       const config = readConfig();
       const spec = ownerMapping(config, projectOwner);
       if (!spec) return disabled(`no config mapping for owner "${projectOwner}"`);
-      storageUrl = specToStorageUrl(spec, origin, projectOwner);
+      storageUrl = specToStorageUrl(spec, origin, projectOwner, projectRoot);
       if (!storageUrl) return disabled(`config mapping for "${projectOwner}" is unparseable: ${spec}`);
       reason = `owner "${projectOwner}" -> ${spec}`;
     }

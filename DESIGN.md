@@ -40,12 +40,12 @@ entries are keyed by `<org>/<repo>` (not just the repo name) — see §3.
 
 For whatever project you are in, resolve its storage repo in this order:
 
-1. **Env var `CLAUDE_TEAM_MEMORY_REPO`** (full git URL or `owner/repo`) — a
-   per-project override.
+1. **Env var `CLAUDE_TEAM_MEMORY_REPO`** (full git URL, local path, or
+   `owner/repo`) — a per-project override.
 2. **Config lookup by owner** (parse host + owner + protocol from the project's
    `origin` remote):
    - hit → use the mapped value (`"auto"` = `<host>:<owner>/team-memory`,
-     or an explicit `owner/repo` / full git URL);
+     or an explicit `owner/repo` / full git URL / local path);
    - miss → **disabled; the plugin no-ops for that repo.**
 3. **Anti-circular guard** on top: if the resolved storage repo URL equals the
    current project's `origin`, or cwd is inside a plugin-data checkout → disabled.
