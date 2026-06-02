@@ -114,7 +114,7 @@ The optional second operand selects the stored value:
 
 | 2nd operand        | Stored config value  | Resolves to (DESIGN §3)                          |
 |--------------------|----------------------|--------------------------------------------------|
-| omitted, or `auto` | `"auto"`             | `<owner>/claude-team-memory` on the project host |
+| omitted, or `auto` | `"auto"`             | `<owner>/team-memory` on the project host |
 | `someorg/somerepo` | `"someorg/somerepo"` | that explicit owner/repo on the project host     |
 | a full git URL     | the URL verbatim     | that exact repo (any host)                       |
 
@@ -127,7 +127,7 @@ or a local path (`/…`, `./…`, `../…`, `~/…`, `file://…`).
    and stop. Let `VALUE` be the second operand, defaulting to `auto`.
 2. **Confirm intent.** Show exactly what will be written, e.g. *"Will set
    `owners["acme"] = "auto"` in `$CONFIG` (acme repos will share to
-   acme/claude-team-memory)."* Proceed without a second prompt for a plain
+   acme/team-memory)."* Proceed without a second prompt for a plain
    `auto`; for an explicit repo/URL, echo it back so a typo is visible.
 3. **Write the mapping** (atomic; seed `{}` and create parents as needed). Prefer
    `jq`; pass owner/value as `--arg` so odd characters can't break the JSON:
@@ -145,7 +145,7 @@ or a local path (`/…`, `./…`, `../…`, `~/…`, `file://…`).
    session start in a matching repo (the SessionStart hook clones + loads), or
    immediately via `/team-memory sync` from a repo owned by `<owner>`. If they
    haven't created the storage repo yet, point them at DESIGN §13 (create a
-   private `<owner>/claude-team-memory`; `auto` clones it on next load).
+   private `<owner>/team-memory`; `auto` clones it on next load).
 
 > To remove an owner mapping, edit `config.json` directly
 > (`jq 'del(.owners["<owner>"])'`) — disabling an owner is just config; it never
@@ -166,7 +166,7 @@ skip Step 1).
    jq -r '.owners // {} | to_entries[] | "\(.key)\t\(.value)"' "$CONFIG"
    ```
 3. For each `owner → value`, explain the resolution in one line (no network):
-   - `auto` → "→ `<owner>/claude-team-memory` (auto, on the repo's own host)";
+   - `auto` → "→ `<owner>/team-memory` (auto, on the repo's own host)";
    - `owner/repo` → "→ `owner/repo` on the repo's host";
    - full git URL / local path → "→ that repo verbatim: `<value>`".
 4. Note other relevant config keys if present (e.g. `maxIndexBytes`).

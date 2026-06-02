@@ -11,7 +11,7 @@
 //      execFileSync(node, [script], { env, cwd, input }). Each test runs in a fresh
 //      mkdtemp world with an isolated HOME + CLAUDE_PLUGIN_DATA. The "remote" is a
 //      BARE local git repo; a `~/.gitconfig` `insteadOf` rule redirects the
-//      parseable SSH storage URL (git@github.com:acme/claude-team-memory.git) onto
+//      parseable SSH storage URL (git@github.com:acme/team-memory.git) onto
 //      that bare repo, so clone/fetch/push are fully OFFLINE — no network, no real
 //      org touched. The native memory dir is built from the real slug rule and
 //      seeded with real files. We then assert load/publish/unshare behavior end to
@@ -57,9 +57,9 @@ const UNSHARE = join(pluginRoot, 'scripts', 'unshare.mjs')
 
 // The parseable storage URL the plugin resolves to from origin acme/app + "auto".
 // (autoStorageUrl(git@github.com:acme/app.git, "acme") === this.)
-const STORAGE_URL = 'git@github.com:acme/claude-team-memory.git'
+const STORAGE_URL = 'git@github.com:acme/team-memory.git'
 // Where checkoutDirFromUrl(STORAGE_URL) lands under <dataDir>/repos.
-const CHECKOUT_SEGMENT = 'github.com__acme__claude-team-memory'
+const CHECKOUT_SEGMENT = 'github.com__acme__team-memory'
 const PROJECT_KEY = 'acme/app' // <org>/<repo> subtree inside the storage repo
 
 // ---------------------------------------------------------------------------

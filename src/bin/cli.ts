@@ -57,7 +57,7 @@ function install(): void {
   console.log(
     `\n✓ Installed ${REF}.\n\n` +
       'One-time setup (the plugin no-ops until you map an owner → storage repo):\n' +
-      '  • create a private team storage repo, e.g. <your-org>/claude-team-memory\n' +
+      '  • create a private team storage repo, e.g. <your-org>/team-memory\n' +
       '  • in a project on that org, run:  /team-memory enable <your-org>\n' +
       'See the README / DESIGN.md §13 for details. Restart Claude Code to load the hook.',
   )

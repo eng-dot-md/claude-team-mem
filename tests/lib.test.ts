@@ -53,17 +53,17 @@ test('sameRepo: normalizes trailing slash/.git across forms', () => {
   assert.equal(sameRepo('git@github.com:acme/app.git', 'git@github.com:acme/other.git'), false)
 })
 
-test('autoStorageUrl: scp-like origin -> claude-team-memory, owner swapped', () => {
+test('autoStorageUrl: scp-like origin -> team-memory, owner swapped', () => {
   assert.equal(
     autoStorageUrl('git@github.com:someuser/myproj.git', 'acme'),
-    'git@github.com:acme/claude-team-memory.git',
+    'git@github.com:acme/team-memory.git',
   )
 })
 
 test('autoStorageUrl: https origin preserves scheme/host/port', () => {
   assert.equal(
     autoStorageUrl('https://ghe.corp.com:8443/u/p.git', 'acme'),
-    'https://ghe.corp.com:8443/acme/claude-team-memory.git',
+    'https://ghe.corp.com:8443/acme/team-memory.git',
   )
 })
 
@@ -132,7 +132,7 @@ test('pathInside: nesting and identity', () => {
 
 test('specToStorageUrl: auto, full URL, bare owner/repo', () => {
   const origin = 'git@github.com:someuser/proj.git'
-  assert.equal(specToStorageUrl('auto', origin, 'acme'), 'git@github.com:acme/claude-team-memory.git')
+  assert.equal(specToStorageUrl('auto', origin, 'acme'), 'git@github.com:acme/team-memory.git')
   assert.equal(
     specToStorageUrl('git@github.com:x/y.git', origin, 'acme'),
     'git@github.com:x/y.git',

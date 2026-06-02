@@ -50,7 +50,7 @@ function install() {
 \u2713 Installed ${REF}.
 
 One-time setup (the plugin no-ops until you map an owner \u2192 storage repo):
-  \u2022 create a private team storage repo, e.g. <your-org>/claude-team-memory
+  \u2022 create a private team storage repo, e.g. <your-org>/team-memory
   \u2022 in a project on that org, run:  /team-memory enable <your-org>
 See the README / DESIGN.md \xA713 for details. Restart Claude Code to load the hook.`
   );

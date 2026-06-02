@@ -97,16 +97,16 @@ export function sameRepo(a: string | undefined | null, b: string | undefined | n
 /**
  * Build the storage URL for the `"auto"` config value: same host + protocol as
  * the project's origin, owner replaced by the given `owner`, repo named
- * `claude-team-memory`. Returns null if `origin` can't be parsed.
+ * `team-memory`. Returns null if `origin` can't be parsed.
  *
  * Protocol preservation:
- *  - scp-like origin  -> `git@<host>:<owner>/claude-team-memory.git`
- *  - scheme origin    -> `<scheme>://[user@]<host>[:port]/<owner>/claude-team-memory.git`
+ *  - scp-like origin  -> `git@<host>:<owner>/team-memory.git`
+ *  - scheme origin    -> `<scheme>://[user@]<host>[:port]/<owner>/team-memory.git`
  */
 export function autoStorageUrl(origin: string | undefined | null, owner: string): string | null {
   if (!origin || !owner) return null
   const trimmed = origin.trim()
-  const repo = 'claude-team-memory'
+  const repo = 'team-memory'
 
   const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.+)$/i)
   if (schemeMatch) {

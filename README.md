@@ -91,7 +91,7 @@ carries a verifiable **provenance** attestation (no long-lived token).
 Follow [`DESIGN.md` §13](./DESIGN.md):
 
 1. **Create a private storage repo** for your team, e.g.
-   `<your-org>/claude-team-memory`. One repo can serve several orgs (entries are
+   `<your-org>/team-memory`. One repo can serve several orgs (entries are
    keyed `<org>/<repo>`, so `acme/app` and `globex/app` never collide).
 
 2. **Configure the owner → storage mapping.** Config lives at
@@ -113,7 +113,7 @@ Follow [`DESIGN.md` §13](./DESIGN.md):
    }
    ```
 
-   `"auto"` resolves to `<your-org>/claude-team-memory` on the same host and
+   `"auto"` resolves to `<your-org>/team-memory` on the same host and
    protocol as the project's `origin`. You can also map to an explicit
    `owner/repo` or a full git URL (`/team-memory enable <org> someorg/somerepo`),
    and point several orgs at one repo for a multi-org team. **Owners you do not
