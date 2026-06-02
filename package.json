@@ -1,6 +1,6 @@
 {
   "name": "claude-team-mem",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo.",
   "type": "module",
   "license": "MIT",
