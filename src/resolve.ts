@@ -2,9 +2,9 @@
 // enabled and, if so, produce all the paths the load/publish/unshare flows need.
 //
 // Order (DESIGN §3):
-//   1. env CLAUDE_TEAM_MEMORY_REPO override (full URL or owner/repo)
+//   1. env CLAUDE_TEAM_MEMORY_REPO override (full URL, local path, or owner/repo)
 //   2. config `owners` lookup by the project's origin owner
-//        ("auto" | "owner/repo" | full URL)
+//        ("auto" | "owner/repo" | full URL | local path)
 //   3. else disabled
 // Then the anti-circular guard. When enabled, ensure the checkout exists
 // (cloneOnce; we do NOT pull here — load refreshes in the background).
@@ -17,6 +17,7 @@ import {
   checkoutDirFromUrl,
   projectKey,
   nativeMemoryDir,
+  normalizeLocalRepoPath,
 } from './lib/paths'
 import { readConfig, ownerMapping } from './lib/config'
 import { isCircular } from './lib/guard'
@@ -37,12 +38,14 @@ export function projectOrigin(projectRoot: string): string | null {
  *  - "auto"            -> <host>:<owner>/team-memory (origin's protocol)
  *  - "owner/repo"      -> same host/protocol as origin, that owner/repo
  *  - a full git URL    -> used verbatim (must parse)
+ *  - a local path       -> absolute path (clone source used verbatim by git)
  * Returns null if it can't be resolved.
  */
 export function specToStorageUrl(
   spec: string,
   origin: string | null,
   owner: string | null,
+  baseDir: string = process.cwd(),
 ): string | null {
   const s = spec.trim()
   if (s.length === 0) return null
@@ -50,6 +53,9 @@ export function specToStorageUrl(
   if (s === 'auto') {
     return owner ? autoStorageUrl(origin, owner) : null
   }
+
+  const localPath = normalizeLocalRepoPath(s, baseDir)
+  if (localPath) return localPath
 
   // A full URL parses directly.
   if (parseRemote(s)) return s
@@ -87,7 +93,7 @@ export function resolve(projectRoot: string): Resolution {
     let reason = ''
     const envSpec = process.env.CLAUDE_TEAM_MEMORY_REPO
     if (envSpec && envSpec.trim().length > 0) {
-      storageUrl = specToStorageUrl(envSpec.trim(), origin, projectOwner)
+      storageUrl = specToStorageUrl(envSpec.trim(), origin, projectOwner, projectRoot)
       if (!storageUrl) return disabled(`env CLAUDE_TEAM_MEMORY_REPO is set but unparseable: ${envSpec}`)
       reason = `env CLAUDE_TEAM_MEMORY_REPO -> ${storageUrl}`
     } else {
@@ -96,7 +102,7 @@ export function resolve(projectRoot: string): Resolution {
       const config = readConfig()
       const spec = ownerMapping(config, projectOwner)
       if (!spec) return disabled(`no config mapping for owner "${projectOwner}"`)
-      storageUrl = specToStorageUrl(spec, origin, projectOwner)
+      storageUrl = specToStorageUrl(spec, origin, projectOwner, projectRoot)
       if (!storageUrl) return disabled(`config mapping for "${projectOwner}" is unparseable: ${spec}`)
       reason = `owner "${projectOwner}" -> ${spec}`
     }

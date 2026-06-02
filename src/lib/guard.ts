@@ -4,7 +4,7 @@
 
 import { join } from 'node:path'
 import { sameRepo } from './remote'
-import { pathInside } from './paths'
+import { normalizeLocalRepoPath, pathInside } from './paths'
 
 /**
  * True if syncing must be DISABLED for circular-safety:
@@ -20,6 +20,8 @@ export function isCircular(
   dataDir: string,
 ): boolean {
   if (sameRepo(storageUrl, origin)) return true
+  const localStoragePath = normalizeLocalRepoPath(storageUrl)
+  if (localStoragePath && pathInside(cwd, localStoragePath)) return true
   const reposRoot = join(dataDir, 'repos')
   if (pathInside(cwd, reposRoot)) return true
   return false

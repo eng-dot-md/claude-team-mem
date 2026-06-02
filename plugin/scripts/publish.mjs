@@ -253,7 +253,7 @@ function isValidSlug(slug) {
 }
 
 // src/lib/paths.ts
-import { join, resolve as resolve2, relative, isAbsolute } from "node:path";
+import { basename as basename2, join, resolve as resolve2, relative, isAbsolute } from "node:path";
 function pathInside(child, parent) {
   try {
     const c = resolve2(child);

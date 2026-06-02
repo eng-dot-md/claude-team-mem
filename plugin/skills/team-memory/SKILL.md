@@ -116,10 +116,11 @@ The optional second operand selects the stored value:
 |--------------------|----------------------|--------------------------------------------------|
 | omitted, or `auto` | `"auto"`             | `<owner>/team-memory` on the project host |
 | `someorg/somerepo` | `"someorg/somerepo"` | that explicit owner/repo on the project host     |
-| a full git URL     | the URL verbatim     | that exact repo (any host)                       |
+| a full git URL or local path | the value verbatim | that exact repo/path |
 
-A "full git URL" is anything containing `://`, matching `user@host:owner/repo`,
-or a local path (`/…`, `./…`, `../…`, `~/…`, `file://…`).
+A "full git URL" is anything containing `://` or matching
+`user@host:owner/repo`. A local path is `/…`, `./…`, `../…`, `~/…`, `~`, or
+`file://…`.
 
 ### Procedure
 

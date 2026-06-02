@@ -52,10 +52,10 @@ export interface Memory {
 
 /**
  * Plugin config, stored at `<dataDir>/config.json`.
- * `owners` maps a GitHub owner -> storage spec ("auto" | "owner/repo" | full URL).
+ * `owners` maps a GitHub owner -> storage spec ("auto" | "owner/repo" | full URL | local path).
  */
 export interface Config {
-  /** owner -> "auto" | "owner/repo" | full git URL. */
+  /** owner -> "auto" | "owner/repo" | full git URL | local path. */
   owners: Record<string, string>
   /** Max bytes of derived index injected at SessionStart (default 20000; 0 = uncapped). */
   maxIndexBytes?: number

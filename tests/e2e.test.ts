@@ -155,6 +155,8 @@ test('unit/isCircular: storage==origin OR cwd inside <dataDir>/repos disables', 
   // cwd inside <dataDir>/repos/... -> circular regardless of URLs.
   eq(isCircular(STORAGE_URL, 'git@github.com:acme/app.git', join(dataDir, 'repos', CHECKOUT_SEGMENT, 'acme', 'app'), dataDir),
     true, 'cwd inside a checkout')
+  eq(isCircular('/proj', 'git@github.com:acme/app.git', '/proj', dataDir),
+    true, 'local storage path is the current project')
 })
 
 test('unit/specToStorageUrl: auto / full URL / bare owner-repo', () => {
@@ -162,6 +164,8 @@ test('unit/specToStorageUrl: auto / full URL / bare owner-repo', () => {
   eq(specToStorageUrl('auto', origin, 'acme'), STORAGE_URL, 'auto')
   eq(specToStorageUrl('git@github.com:x/y.git', origin, 'acme'), 'git@github.com:x/y.git', 'full URL verbatim')
   eq(specToStorageUrl('globex/shared', origin, 'acme'), 'git@github.com:globex/shared.git', 'bare owner/repo grafted')
+  eq(specToStorageUrl('./storage.git', origin, 'acme', '/tmp/project'), resolvePath('/tmp/project/storage.git'), 'relative local path')
+  eq(specToStorageUrl('file:///tmp/storage.git', origin, 'acme'), resolvePath('/tmp/storage.git'), 'file URL local path')
 })
 
 test('unit/frontmatter: a `---` line inside the body does NOT close the block', () => {
@@ -946,6 +950,28 @@ test('integration/resolve.mjs: an unconfigured owner resolves to enabled:false',
     eq(res.status, 0, 'resolve exits 0 even when disabled')
     const r = JSON.parse(res.stdout.trim()) as import('../src/types').Resolution
     eq(r.enabled, false, `unconfigured owner -> disabled (reason: ${r.reason})`)
+  } finally {
+    cleanup(w)
+  }
+})
+
+test('integration/resolve.mjs: accepts a local-path storage mapping', () => {
+  const w = makeWorld({ 'x.md': TEAM_FILE })
+  try {
+    writeFileSync(
+      join(w.dataDir, 'config.json'),
+      JSON.stringify({ owners: { acme: w.bare }, maxIndexBytes: 20000 }) + '\n',
+      'utf8',
+    )
+    const res = runScript(join(pluginRoot, 'scripts', 'resolve.mjs'), w.env, ['--cwd', w.projectDir])
+    eq(res.status, 0, `resolve exits 0 (stderr: ${res.stderr})`)
+    const r = JSON.parse(res.stdout.trim()) as import('../src/types').Resolution
+    eq(r.enabled, true, `enabled true (reason: ${r.reason})`)
+    eq(r.storageUrl, w.bare, 'local storage path is used verbatim as the clone source')
+    ok((r.checkoutDir ?? '').startsWith(join(w.dataDir, 'repos', 'local__storage__')), `local checkout dir is keyed safely (${r.checkoutDir})`)
+    eq(r.projectKey, PROJECT_KEY, 'projectKey remains based on the project origin')
+    ok(existsSync(join(r.checkoutDir ?? '', '.git')), 'resolve cloned the local storage repo')
+    ok(existsSync(join(r.targetMemoryDir ?? '', 'x.md')), 'local storage checkout has the seeded team file')
   } finally {
     cleanup(w)
   }
