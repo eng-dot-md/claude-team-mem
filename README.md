@@ -64,6 +64,26 @@ point the marketplace at a local clone during development:
 /plugin marketplace add /path/to/claude-team-mem
 ```
 
+### From npm
+
+The plugin is also published to npm as the unscoped package
+[`claude-team-mem`](https://www.npmjs.com/package/claude-team-mem). Each release is
+built and published from CI via npm **Trusted Publishing (OIDC)**, so every version
+carries a verifiable **provenance** attestation (no long-lived token is used).
+
+```bash
+npm view claude-team-mem            # versions, dist-tags, provenance
+npm install claude-team-mem         # download the built plugin/ payload
+```
+
+> **Note:** `npm install claude-team-mem` only fetches the package contents (the
+> built `plugin/` subtree); it does **not** register the plugin or its SessionStart
+> hook with Claude Code. To actually use the plugin, install it with the
+> `/plugin marketplace add` + `/plugin install` commands above — Claude Code loads
+> plugins from a marketplace, not from `node_modules`. The npm package is the
+> versioned, provenance-signed distribution artifact (e.g. for auditing or
+> vendoring into your own marketplace).
+
 ## One-time setup
 
 Follow [`DESIGN.md` §13](./DESIGN.md):
