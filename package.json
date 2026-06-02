@@ -8,6 +8,9 @@
     "type": "git",
     "url": "git+https://github.com/eng-dot-md/claude-team-mem.git"
   },
+  "bin": {
+    "claude-team-mem": "./plugin/scripts/cli.mjs"
+  },
   "files": [
     "plugin",
     "DESIGN.md"

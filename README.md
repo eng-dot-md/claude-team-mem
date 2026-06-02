@@ -48,21 +48,43 @@ prevented structurally. See [`DESIGN.md`](./DESIGN.md) for the full design.
 
 ## Install
 
-Add this repository as a Claude Code marketplace, then install the plugin. The
-marketplace manifest points at the `plugin/` subdirectory (`"source": "./plugin"`),
-so installing pulls only the installable plugin:
+**Quickest — `npx`** (wraps the supported `claude plugin` CLI to add the marketplace
+and install + enable the plugin):
+
+```bash
+npx claude-team-mem install      # add marketplace + install + enable
+npx claude-team-mem uninstall    # reverse it
+```
+
+**Manual** — from inside a Claude Code session. The marketplace manifest points at
+the `plugin/` subdirectory (`"source": "./plugin"`), so installing pulls only the
+installable plugin:
 
 ```
 /plugin marketplace add eng-dot-md/claude-team-mem
 /plugin install claude-team-mem@claude-team-mem
 ```
 
-(The marketplace and the plugin are both named `claude-team-mem`.) You can also
-point the marketplace at a local clone during development:
+(The marketplace and the plugin are both named `claude-team-mem`.) During
+development you can point the marketplace at a local clone instead:
 
 ```
 /plugin marketplace add /path/to/claude-team-mem
 ```
+
+### About the npm package
+
+The plugin is published to npm as the unscoped package
+[`claude-team-mem`](https://www.npmjs.com/package/claude-team-mem). Each release is
+built and published from CI via npm **Trusted Publishing (OIDC)**, so every version
+carries a verifiable **provenance** attestation (no long-lived token).
+
+> `npx claude-team-mem install` is the npm entry point (and `npm view
+> claude-team-mem` shows versions/provenance). A bare `npm install claude-team-mem`
+> only downloads the package — the built `plugin/` subtree — it does **not** register
+> the plugin or its SessionStart hook with Claude Code. Installation is always either
+> `npx claude-team-mem install` or the `/plugin` commands above (Claude Code loads
+> plugins from a marketplace, not from `node_modules`).
 
 ## One-time setup
 
