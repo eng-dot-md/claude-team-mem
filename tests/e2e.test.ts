@@ -978,3 +978,28 @@ test('integration/publish: a --target-dir outside the checkout is refused', () =
     cleanup(w)
   }
 })
+
+// --- npx CLI (claude-team-mem install/uninstall) ---------------------------
+// We never run `install`/`uninstall` against a real `claude` here (that would
+// mutate the machine's Claude Code state); we only assert the safe paths.
+
+const CLI = join(pluginRoot, 'scripts', 'cli.mjs')
+
+test('cli: help prints usage and exits 0', () => {
+  const r = runScript(CLI, process.env, ['help'])
+  eq(r.status, 0, 'help exits 0')
+  includes(r.stdout, 'npx claude-team-mem install', 'help shows the install usage')
+  includes(r.stdout, 'eng-dot-md/claude-team-mem', 'help shows the manual marketplace fallback')
+})
+
+test('cli: an unknown command exits 2', () => {
+  const r = runScript(CLI, process.env, ['definitely-not-a-command'])
+  eq(r.status, 2, 'unknown command -> exit 2')
+})
+
+test('cli: install without the `claude` CLI on PATH fails cleanly (exit 1, no side effects)', () => {
+  // Strip PATH so `claude` cannot be found; node still runs (invoked by abs path).
+  const r = runScript(CLI, { ...process.env, PATH: '/var/empty' }, ['install'])
+  eq(r.status, 1, 'exits 1 when claude is missing')
+  includes(r.stderr, 'was not found', 'explains the claude CLI is missing')
+})

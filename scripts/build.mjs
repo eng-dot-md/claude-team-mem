@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const outdir = join(root, 'plugin', 'scripts')
-const entries = ['load', 'publish', 'unshare', 'resolve']
+const entries = ['load', 'publish', 'unshare', 'resolve', 'cli']
 
 rmSync(outdir, { recursive: true, force: true })
 mkdirSync(outdir, { recursive: true })
