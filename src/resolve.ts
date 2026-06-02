@@ -34,7 +34,7 @@ export function projectOrigin(projectRoot: string): string | null {
 
 /**
  * Turn a storage spec into a concrete git URL given the project's origin.
- *  - "auto"            -> <host>:<owner>/claude-team-memory (origin's protocol)
+ *  - "auto"            -> <host>:<owner>/team-memory (origin's protocol)
  *  - "owner/repo"      -> same host/protocol as origin, that owner/repo
  *  - a full git URL    -> used verbatim (must parse)
  * Returns null if it can't be resolved.
@@ -59,7 +59,7 @@ export function specToStorageUrl(
     const [graftOwner, graftRepo] = s.split('/') as [string, string]
     if (origin) {
       const auto = autoStorageUrl(origin, graftOwner)
-      if (auto) return auto.replace(/claude-team-memory\.git$/, `${graftRepo}.git`)
+      if (auto) return auto.replace(/team-memory\.git$/, `${graftRepo}.git`)
     }
     return null
   }

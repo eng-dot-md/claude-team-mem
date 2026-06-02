@@ -123,7 +123,7 @@ function sameRepo(a, b) {
 function autoStorageUrl(origin, owner) {
   if (!origin || !owner) return null;
   const trimmed = origin.trim();
-  const repo = "claude-team-memory";
+  const repo = "team-memory";
   const schemeMatch = trimmed.match(/^([a-z][a-z0-9+.-]*):\/\/(.+)$/i);
   if (schemeMatch) {
     const scheme = schemeMatch[1] ?? "";
@@ -277,7 +277,7 @@ function specToStorageUrl(spec, origin, owner) {
     const [graftOwner, graftRepo] = s.split("/");
     if (origin) {
       const auto = autoStorageUrl(origin, graftOwner);
-      if (auto) return auto.replace(/claude-team-memory\.git$/, `${graftRepo}.git`);
+      if (auto) return auto.replace(/team-memory\.git$/, `${graftRepo}.git`);
     }
     return null;
   }

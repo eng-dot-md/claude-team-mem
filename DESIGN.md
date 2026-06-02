@@ -44,7 +44,7 @@ For whatever project you are in, resolve its storage repo in this order:
    per-project override.
 2. **Config lookup by owner** (parse host + owner + protocol from the project's
    `origin` remote):
-   - hit → use the mapped value (`"auto"` = `<host>:<owner>/claude-team-memory`,
+   - hit → use the mapped value (`"auto"` = `<host>:<owner>/team-memory`,
      or an explicit `owner/repo` / full git URL);
    - miss → **disabled; the plugin no-ops for that repo.**
 3. **Anti-circular guard** on top: if the resolved storage repo URL equals the
@@ -72,16 +72,16 @@ so the default config path is `~/.claude-team-mem/config.json`:
 {
   "owners": {
     "acme":      "auto",
-    "acme-labs": "git@github.com:acme/claude-team-memory.git",
+    "acme-labs": "git@github.com:acme/team-memory.git",
     "globex":    "git@github.com:globex/shared-claude-mem.git"
   },
   "maxIndexBytes": 20000
 }
 ```
 
-- `"auto"` resolves to `<owner>/claude-team-memory` (same host/protocol as the project).
+- `"auto"` resolves to `<owner>/team-memory` (same host/protocol as the project).
 - **Multi-org team:** point several orgs at one repo (here `acme` + `acme-labs` →
-  `acme/claude-team-memory`); their projects stay separated by the `<org>/<repo>`
+  `acme/team-memory`); their projects stay separated by the `<org>/<repo>`
   key (`acme/app`, `acme-labs/app`).
 - Owners not listed are no-ops — **no team is forced to put memory anywhere it
   doesn't configure**, and each org can equally have its own repo.
@@ -342,7 +342,7 @@ claude-team-mem/                          (eng-dot-md/claude-team-mem)
 
 ## 13. Setup (one-time)
 
-1. Create a private storage repo for the team, e.g. `<your-org>/claude-team-memory`
+1. Create a private storage repo for the team, e.g. `<your-org>/team-memory`
    (one repo can serve several orgs — see §3).
 2. Configure `${CLAUDE_PLUGIN_DATA}/config.json` (default `~/.claude-team-mem/config.json`),
    e.g. `"owners": { "<your-org>": "auto" }`.
