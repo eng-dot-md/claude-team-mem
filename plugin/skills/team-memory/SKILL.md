@@ -40,11 +40,42 @@ here — those live in the compiled scripts and `/share-memory`.
 
 ## Step 0 — resolve the data dir and config path (always do this first)
 
-`CLAUDE_PLUGIN_DATA` may be unset; it defaults to `~/.claude-team-mem`. Resolve
-the real paths once and reuse them:
+`CLAUDE_PLUGIN_DATA` may be unset. In some agent/plugin contexts it may also point
+at the invoking plugin's data dir rather than this plugin's data dir. Normalize it
+once, export the normalized value, and reuse it for every command:
 
 ```bash
-DATA_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.claude-team-mem}"; DATA_DIR="${DATA_DIR%/}"
+_CTM_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+_CTM_ROOT="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}"
+_CTM_INFERRED=""
+
+case "$_CTM_ROOT" in
+  "$_CTM_CONFIG_DIR"/plugins/cache/*/*/*)
+    _CTM_REL="${_CTM_ROOT#$_CTM_CONFIG_DIR/plugins/cache/}"
+    _CTM_MARKET="${_CTM_REL%%/*}"
+    _CTM_REST="${_CTM_REL#*/}"
+    _CTM_PLUGIN="${_CTM_REST%%/*}"
+    _CTM_INFERRED="$_CTM_CONFIG_DIR/plugins/data/${_CTM_MARKET}-${_CTM_PLUGIN}"
+    ;;
+  "$_CTM_CONFIG_DIR"/plugins/marketplaces/*/plugin*)
+    _CTM_REL="${_CTM_ROOT#$_CTM_CONFIG_DIR/plugins/marketplaces/}"
+    _CTM_MARKET="${_CTM_REL%%/*}"
+    _CTM_INFERRED="$_CTM_CONFIG_DIR/plugins/data/${_CTM_MARKET}-inline"
+    ;;
+esac
+
+DATA_DIR="${CLAUDE_PLUGIN_DATA:-}"
+case "$DATA_DIR" in
+  "$_CTM_CONFIG_DIR"/plugins/data/*)
+    case "${DATA_DIR##*/}" in
+      *claude-team-mem*) ;;
+      *) DATA_DIR="$_CTM_INFERRED" ;;
+    esac
+    ;;
+esac
+
+DATA_DIR="${DATA_DIR:-${_CTM_INFERRED:-$HOME/.claude-team-mem}}"; DATA_DIR="${DATA_DIR%/}"
+export CLAUDE_PLUGIN_DATA="$DATA_DIR"
 CONFIG="$DATA_DIR/config.json"
 echo "data dir : $DATA_DIR"
 echo "config   : $CONFIG"

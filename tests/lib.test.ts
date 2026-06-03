@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { resolve as resolvePath } from 'node:path'
 import { parseRemote, sameRepo, autoStorageUrl } from '../src/lib/remote'
 import { parseFrontmatter, isValidSlug } from '../src/lib/frontmatter'
-import { slugForPath, pathInside } from '../src/lib/paths'
+import { slugForPath, pathInside, dataDir } from '../src/lib/paths'
 import { specToStorageUrl } from '../src/resolve'
 
 test('parseRemote: scp-like with .git', () => {
@@ -129,6 +129,42 @@ test('pathInside: nesting and identity', () => {
   assert.equal(pathInside('/a/b', '/a/b'), true)
   assert.equal(pathInside('/a/sibling', '/a/b'), false)
   assert.equal(pathInside('/a/b/../x', '/a/b'), false)
+})
+
+test('dataDir: ignores a different Claude plugin data dir when this plugin root is known', () => {
+  const savedData = process.env.CLAUDE_PLUGIN_DATA
+  const savedRoot = process.env.CLAUDE_PLUGIN_ROOT
+
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = '/Users/me/.claude/plugins/data/codex-openai-codex'
+    process.env.CLAUDE_PLUGIN_ROOT = '/Users/me/.claude/plugins/cache/claude-team-mem/claude-team-mem/0.1.3'
+
+    assert.equal(dataDir(), '/Users/me/.claude/plugins/data/claude-team-mem-claude-team-mem')
+  } finally {
+    if (savedData === undefined) delete process.env.CLAUDE_PLUGIN_DATA
+    else process.env.CLAUDE_PLUGIN_DATA = savedData
+
+    if (savedRoot === undefined) delete process.env.CLAUDE_PLUGIN_ROOT
+    else process.env.CLAUDE_PLUGIN_ROOT = savedRoot
+  }
+})
+
+test('dataDir: preserves explicit custom data dirs outside Claude plugin data', () => {
+  const savedData = process.env.CLAUDE_PLUGIN_DATA
+  const savedRoot = process.env.CLAUDE_PLUGIN_ROOT
+
+  try {
+    process.env.CLAUDE_PLUGIN_DATA = '/tmp/ctm-test-data'
+    process.env.CLAUDE_PLUGIN_ROOT = '/Users/me/.claude/plugins/cache/claude-team-mem/claude-team-mem/0.1.3'
+
+    assert.equal(dataDir(), '/tmp/ctm-test-data')
+  } finally {
+    if (savedData === undefined) delete process.env.CLAUDE_PLUGIN_DATA
+    else process.env.CLAUDE_PLUGIN_DATA = savedData
+
+    if (savedRoot === undefined) delete process.env.CLAUDE_PLUGIN_ROOT
+    else process.env.CLAUDE_PLUGIN_ROOT = savedRoot
+  }
 })
 
 test('specToStorageUrl: auto, full URL, bare owner/repo', () => {

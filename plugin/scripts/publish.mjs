@@ -14,7 +14,7 @@ import {
   rmSync,
   symlinkSync
 } from "node:fs";
-import { dirname, join as join2, resolve as resolve3 } from "node:path";
+import { dirname as dirname2, join as join2, resolve as resolve3 } from "node:path";
 
 // src/lib/git.ts
 import { execFileSync } from "node:child_process";
@@ -253,7 +253,7 @@ function isValidSlug(slug) {
 }
 
 // src/lib/paths.ts
-import { basename as basename2, join, resolve as resolve2, relative, isAbsolute } from "node:path";
+import { basename as basename2, dirname, join, resolve as resolve2, relative, isAbsolute, sep } from "node:path";
 function pathInside(child, parent) {
   try {
     const c = resolve2(child);
@@ -295,7 +295,7 @@ function lexists(path) {
 function resolveSymlink(linkPath) {
   try {
     const target = readlinkSync(linkPath);
-    return resolve3(dirname(resolve3(linkPath)), target);
+    return resolve3(dirname2(resolve3(linkPath)), target);
   } catch {
     return null;
   }

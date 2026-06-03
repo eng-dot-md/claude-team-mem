@@ -134,14 +134,51 @@ function autoStorageUrl(origin, owner) {
 // src/lib/paths.ts
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { basename, join, resolve, relative, isAbsolute } from "node:path";
+import { basename, dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+var PLUGIN_NAME = "claude-team-mem";
+var warnedForeignPluginDataDir = false;
 function dataDir() {
   const env = process.env.CLAUDE_PLUGIN_DATA;
-  return env && env.length > 0 ? env : join(homedir(), ".claude-team-mem");
+  const inferred = inferPluginDataDir();
+  if (env && env.length > 0) {
+    if (inferred && isForeignClaudePluginDataDir(env, inferred)) {
+      if (!warnedForeignPluginDataDir) {
+        ctmLog(`ignoring foreign CLAUDE_PLUGIN_DATA=${env}; using ${inferred}`);
+        warnedForeignPluginDataDir = true;
+      }
+      return inferred;
+    }
+    return env;
+  }
+  return inferred ?? join(homedir(), ".claude-team-mem");
 }
 function configPath() {
   return join(dataDir(), "config.json");
+}
+function isForeignClaudePluginDataDir(env, inferred) {
+  const actual = resolve(env);
+  const expected = resolve(inferred);
+  if (actual === expected) return false;
+  const marker = `${sep}plugins${sep}data${sep}`;
+  if (!actual.includes(marker)) return false;
+  return !basename(actual).includes(PLUGIN_NAME);
+}
+function inferPluginDataDir() {
+  return dataDirFromPluginRoot(process.env.CLAUDE_PLUGIN_ROOT) ?? dataDirFromPluginRoot(dirname(fileURLToPath(import.meta.url)));
+}
+function dataDirFromPluginRoot(path) {
+  if (!path) return null;
+  const parts = resolve(path).split(sep);
+  const cache = parts.lastIndexOf("cache");
+  if (cache > 0 && parts[cache - 1] === "plugins" && parts[cache + 1] && parts[cache + 2]) {
+    return join(parts.slice(0, cache).join(sep) || sep, "data", `${parts[cache + 1]}-${parts[cache + 2]}`);
+  }
+  const marketplaces = parts.lastIndexOf("marketplaces");
+  if (marketplaces > 0 && parts[marketplaces - 1] === "plugins" && parts[marketplaces + 1]) {
+    return join(parts.slice(0, marketplaces).join(sep) || sep, "data", `${parts[marketplaces + 1]}-inline`);
+  }
+  return null;
 }
 function claudeConfigDir() {
   const env = process.env.CLAUDE_CONFIG_DIR;
