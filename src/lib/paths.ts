@@ -4,11 +4,14 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, resolve, relative, isAbsolute } from 'node:path'
+import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ParsedRemote } from '../types'
 import { parseRemote } from './remote'
 import { ctmLog } from './log'
+
+const PLUGIN_NAME = 'claude-team-mem'
+let warnedForeignPluginDataDir = false
 
 /**
  * The single data dir for both checkouts and config.
@@ -16,12 +19,57 @@ import { ctmLog } from './log'
  */
 export function dataDir(): string {
   const env = process.env.CLAUDE_PLUGIN_DATA
-  return env && env.length > 0 ? env : join(homedir(), '.claude-team-mem')
+  const inferred = inferPluginDataDir()
+
+  if (env && env.length > 0) {
+    if (inferred && isForeignClaudePluginDataDir(env, inferred)) {
+      if (!warnedForeignPluginDataDir) {
+        ctmLog(`ignoring foreign CLAUDE_PLUGIN_DATA=${env}; using ${inferred}`)
+        warnedForeignPluginDataDir = true
+      }
+      return inferred
+    }
+    return env
+  }
+
+  return inferred ?? join(homedir(), '.claude-team-mem')
 }
 
 /** Canonical config location: `<dataDir>/config.json`. */
 export function configPath(): string {
   return join(dataDir(), 'config.json')
+}
+
+function isForeignClaudePluginDataDir(env: string, inferred: string): boolean {
+  const actual = resolve(env)
+  const expected = resolve(inferred)
+  if (actual === expected) return false
+
+  const marker = `${sep}plugins${sep}data${sep}`
+  if (!actual.includes(marker)) return false
+
+  return !basename(actual).includes(PLUGIN_NAME)
+}
+
+function inferPluginDataDir(): string | null {
+  return dataDirFromPluginRoot(process.env.CLAUDE_PLUGIN_ROOT) ?? dataDirFromPluginRoot(dirname(fileURLToPath(import.meta.url)))
+}
+
+function dataDirFromPluginRoot(path: string | undefined): string | null {
+  if (!path) return null
+
+  const parts = resolve(path).split(sep)
+  const cache = parts.lastIndexOf('cache')
+  if (cache > 0 && parts[cache - 1] === 'plugins' && parts[cache + 1] && parts[cache + 2]) {
+    return join(parts.slice(0, cache).join(sep) || sep, 'data', `${parts[cache + 1]}-${parts[cache + 2]}`)
+  }
+
+  const marketplaces = parts.lastIndexOf('marketplaces')
+  if (marketplaces > 0 && parts[marketplaces - 1] === 'plugins' && parts[marketplaces + 1]) {
+    return join(parts.slice(0, marketplaces).join(sep) || sep, 'data', `${parts[marketplaces + 1]}-inline`)
+  }
+
+  return null
 }
 
 /** The base dir Claude Code uses for native memory: `$CLAUDE_CONFIG_DIR` or `~/.claude`. */
