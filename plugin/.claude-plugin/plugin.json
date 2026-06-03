@@ -1,6 +1,6 @@
 {
   "name": "claude-team-mem",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Share a team-relevant subset of Claude's per-project memory across a team via a private git storage repo.",
   "author": {
     "name": "eng-dot-md",
